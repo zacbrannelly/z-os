@@ -11,4 +11,7 @@ qemu-system-aarch64 \
   -serial stdio \
   -monitor none \
   -device ramfb \
-  -device virtio-gpu-pci
+  -device virtio-gpu-pci \
+  -device qemu-xhci \
+  -usb \
+  -device usb-kbd
