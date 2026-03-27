@@ -2,7 +2,7 @@ ENTRY(kernel_main)
 
 SECTIONS
 {
-  . = 0x400000;
+  . = 0xFFFF000000000000;
 
   __kernel_start = .;
 

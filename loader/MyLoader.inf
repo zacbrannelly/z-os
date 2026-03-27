@@ -7,7 +7,11 @@
   ENTRY_POINT                    = UefiMain
 
 [Sources]
-  my_loader.c
+  MyLoader.c
+  virtual_addr.c
+  kernel_elf.c
+  kernel_loader.c
+  elf.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -15,3 +19,6 @@
 [LibraryClasses]
   UefiApplicationEntryPoint
   UefiLib
+
+[Protocols]
+  gEfiLoadedImageProtocolGuid
