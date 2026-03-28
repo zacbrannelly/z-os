@@ -6,6 +6,7 @@
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
+#include <Guid/FileInfo.h>
 
 #include "kernel_elf.h"
 #include "kernel_loader.h"
@@ -110,27 +111,63 @@ EFI_STATUS EFIAPI UefiMain (
     return Status;
   }
 
-  UINT8 kernelBuffer[256 * 4096];
-  UINTN kernelBufferSize = 256 * 4096;
-  Status = FileProtocol->Read(FileProtocol, &kernelBufferSize, kernelBuffer);
+  UINTN fileInfoSize = 0;
+  Status = FileProtocol->GetInfo(FileProtocol, &gEfiFileInfoGuid, &fileInfoSize, NULL);
+  if (EFI_ERROR(Status) && Status != EFI_BUFFER_TOO_SMALL) {
+    Print(L"Failed to get file info: %r\r\n", Status);
+    return Status;
+  }
+
+  EFI_FILE_INFO *fileInfo = NULL;
+  Status = SystemTable->BootServices->AllocatePool(
+    EfiLoaderData,
+    fileInfoSize,
+    (VOID **)&fileInfo
+  );
+  if (EFI_ERROR(Status)) {
+    Print(L"Failed to allocate pool for file info: %r\r\n", Status);
+    return Status;
+  }
+
+  Status = FileProtocol->GetInfo(FileProtocol, &gEfiFileInfoGuid, &fileInfoSize, fileInfo);
+  if (EFI_ERROR(Status)) {
+    Print(L"Failed to get file info: %r\r\n", Status);
+    return Status;
+  }
+
+  // Allocate a buffer of the size of the kernel file.
+  UINTN kernelFileSize = (UINTN)fileInfo->FileSize;
+  uint8_t *kernel_elf_buffer = NULL;
+  Status = SystemTable->BootServices->AllocatePool(
+    EfiLoaderData,
+    kernelFileSize,
+    (VOID **)&kernel_elf_buffer
+  );
+  if (EFI_ERROR(Status)) {
+    Print(L"Failed to allocate pool for kernel buffer: %r\r\n", Status);
+    return Status;
+  }
+
+  Status = FileProtocol->Read(FileProtocol, &kernelFileSize, kernel_elf_buffer);
   if (EFI_ERROR(Status)) {
     Print(L"Failed to read file: %r\r\n", Status);
     return Status;
   }
 
   kernel_elf_info_t kernelElfInfo;
-  if (kernel_elf_parse_info(kernelBuffer, &kernelElfInfo) < 0) {
+  if (kernel_elf_parse_info(kernel_elf_buffer, &kernelElfInfo) < 0) {
     Print(L"Failed to parse kernel ELF file: %r\r\n", Status);
     return Status;
   }
 
   Print(L"Kernel ELF Info:\r\n");
   Print(L"Entry Point: 0x%lx\r\n", kernelElfInfo.entry_point);
-  Print(L"Loadable Segment Start: 0x%lx\r\n", kernelElfInfo.loadable_segment_start);
-  Print(L"Loadable Segment Memory Size: 0x%lx\r\n", kernelElfInfo.loadable_segment_memory_size);
-  Print(L"Loadable Segment File Size: 0x%lx\r\n", kernelElfInfo.loadable_segment_file_size);
-  Print(L"Image Start: 0x%lx\r\n", kernelElfInfo.image_start);
-  Print(L"Program Alignment: 0x%lx\r\n", kernelElfInfo.program_alignment);
+  Print(L"Loadable Segment Start: 0x%lx\r\n", kernelElfInfo.segments[0].loadable_segment_start);
+  Print(L"Loadable Segment Memory Size: 0x%lx\r\n", kernelElfInfo.segments[0].loadable_segment_memory_size);
+  Print(L"Loadable Segment File Size: 0x%lx\r\n", kernelElfInfo.segments[0].loadable_segment_file_size);
+  Print(L"Image Start: 0x%lx\r\n", kernelElfInfo.segments[0].image_start);
+  Print(L"Program Alignment: 0x%lx\r\n", kernelElfInfo.segments[0].alignment);
+  Print(L"Program Flags: 0x%lx\r\n", kernelElfInfo.segments[0].flags);
 
   // ============================================ Setup the translation table ============================================
 
@@ -177,6 +214,16 @@ EFI_STATUS EFIAPI UefiMain (
     sizeof(boot_info_t)
   );
 
+  // ============================================ Clean up memory ============================================
+
+  // Free the file info buffer.
+  SystemTable->BootServices->FreePool(fileInfo);
+  fileInfo = NULL;
+
+  // Free the kernel buffer.
+  SystemTable->BootServices->FreePool(kernel_elf_buffer);
+  kernel_elf_buffer = NULL;
+
   // ============================================ Exit boot services ============================================
   ExitBootServices(ImageHandle, SystemTable);
 
@@ -186,6 +233,8 @@ EFI_STATUS EFIAPI UefiMain (
 
   // Enable MMU for TTBR1, using the VA table we've built.
   virtual_addr_apply_to_ttbr1(&table);
+
+  // TODO: Change the stack pointer to the top of the kernel stack (the end of the mapped stack space).
 
   // Jump to the kernel's entry point.
   void (*kernelEntry)(boot_info_t *) = (void (*)(boot_info_t *))kernelElfInfo.entry_point;

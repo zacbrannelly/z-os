@@ -22,3 +22,6 @@
 
 [Protocols]
   gEfiLoadedImageProtocolGuid
+
+[Guids]
+  gEfiFileInfoGuid

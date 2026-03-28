@@ -67,4 +67,9 @@ typedef struct program_header_t {
 // Program header type for loadable segments.
 #define PT_LOAD 0x1
 
+// Program header flags.
+#define PF_X (1 << 0) // Segment is executable
+#define PF_W (1 << 1) // Segment is writable
+#define PF_R (1 << 2) // Segment is readable
+
 void elf_print_details(uint8_t *elf_buffer);

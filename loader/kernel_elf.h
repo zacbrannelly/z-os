@@ -2,10 +2,9 @@
 
 #include <stdint.h>
 
-typedef struct kernel_elf_info_t {
-    // Where to jump to once the kernel is loaded into memory (in virtual address space).
-    uint64_t entry_point;
+#define KERNEL_ELF_MAX_SEGMENTS 10
 
+typedef struct kernel_elf_segment_t {
     // Where the kernel segment starts in the provided ELF buffer.
     uint8_t *loadable_segment_start;
 
@@ -19,7 +18,19 @@ typedef struct kernel_elf_info_t {
     uint64_t image_start;
 
     // Alignment requirement for the program image.
-    uint64_t program_alignment;
+    uint64_t alignment;
+
+    // Flags for the program image.
+    uint32_t flags;
+} kernel_elf_segment_t;
+
+typedef struct kernel_elf_info_t {
+    // Where to jump to once the kernel is loaded into memory (in virtual address space).
+    uint64_t entry_point;
+
+    // The loadable segments (PT_LOAD) of the kernel ELF file.
+    uint8_t num_segments;
+    kernel_elf_segment_t segments[KERNEL_ELF_MAX_SEGMENTS];
 } kernel_elf_info_t;
 
 int kernel_elf_parse_info(uint8_t *elf_buffer, kernel_elf_info_t *info);
