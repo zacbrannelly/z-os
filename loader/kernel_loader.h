@@ -5,7 +5,7 @@
 #include "virtual_addr.h"
 
 int kernel_loader_load(
-    EFI_SYSTEM_TABLE *SystemTable,
+    EFI_SYSTEM_TABLE *system_table,
     virtual_addr_table_t *table,
     kernel_elf_info_t *elf_info
 );

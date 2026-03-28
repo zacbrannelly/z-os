@@ -11,12 +11,12 @@
 #define TCR_SET_T1SZ_16_FLAG (16ULL << 16)
 #define TCR_CLEAR_T1SZ_FLAG ~(0x3FULL << 16)
 
-int virtual_addr_allocate_table(EFI_SYSTEM_TABLE *SystemTable, virtual_addr_table_t *table) {
+int virtual_addr_allocate_table(EFI_SYSTEM_TABLE *system_table, virtual_addr_table_t *table) {
     // Clear the structure.
     ZeroMem((VOID *)table, sizeof(virtual_addr_table_t));
 
     // Allocate pages of memory for 4 levels of page tables.
-    EFI_STATUS status = SystemTable->BootServices->AllocatePages(
+    EFI_STATUS status = system_table->BootServices->AllocatePages(
       AllocateAnyPages,
       EfiLoaderData,
       1,
@@ -33,9 +33,9 @@ int virtual_addr_allocate_table(EFI_SYSTEM_TABLE *SystemTable, virtual_addr_tabl
     return 0;
 }
 
-int alloc_new_table_entry(EFI_SYSTEM_TABLE *SystemTable, uint64_t *page_base_address, uint16_t index) {
+int alloc_new_table_entry(EFI_SYSTEM_TABLE *system_table, uint64_t *page_base_address, uint16_t index) {
     EFI_PHYSICAL_ADDRESS page_table = 0;
-    EFI_STATUS status = SystemTable->BootServices->AllocatePages(
+    EFI_STATUS status = system_table->BootServices->AllocatePages(
         AllocateAnyPages,
         EfiLoaderData,
         1,
@@ -59,7 +59,7 @@ int alloc_new_table_entry(EFI_SYSTEM_TABLE *SystemTable, uint64_t *page_base_add
 }
 
 int virtual_addr_map_page(
-    EFI_SYSTEM_TABLE *SystemTable,
+    EFI_SYSTEM_TABLE *system_table,
     virtual_addr_table_t *table,
     uint64_t physical_address,
     uint64_t virtual_address,
@@ -80,7 +80,7 @@ int virtual_addr_map_page(
     uint64_t l0_entry = ((uint64_t *)table->root_page_table)[l0_index];
     if ((l0_entry & TBL_ENTRY_VALID) == 0) {
         // No link to the l1 page table, so we need to allocate a new one.
-        if (alloc_new_table_entry(SystemTable, (uint64_t *)table->root_page_table, l0_index) < 0) {
+        if (alloc_new_table_entry(system_table, (uint64_t *)table->root_page_table, l0_index) < 0) {
             Print(L"Failed to allocate new table entry for L0 index %u: %r\r\n", l0_index);
             return -1;
         }
@@ -90,7 +90,7 @@ int virtual_addr_map_page(
     uint64_t *l0_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
     uint64_t l1_entry = l0_page_table[l1_index];
     if ((l1_entry & TBL_ENTRY_VALID) == 0) {
-        if (alloc_new_table_entry(SystemTable, l0_page_table, l1_index) < 0) {
+        if (alloc_new_table_entry(system_table, l0_page_table, l1_index) < 0) {
             Print(L"Failed to allocate new table entry for L1 index %u: %r\r\n", l1_index);
             return -1;
         }
@@ -100,7 +100,7 @@ int virtual_addr_map_page(
     uint64_t *l1_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
     uint64_t l2_entry = l1_page_table[l2_index];
     if ((l2_entry & TBL_ENTRY_VALID) == 0) {
-        if (alloc_new_table_entry(SystemTable, l1_page_table, l2_index) < 0) {
+        if (alloc_new_table_entry(system_table, l1_page_table, l2_index) < 0) {
             Print(L"Failed to allocate new table entry for L2 index %u: %r\r\n", l2_index);
             return -1;
         }
@@ -120,7 +120,7 @@ int virtual_addr_map_page(
 }
 
 int virtual_addr_map(
-    EFI_SYSTEM_TABLE *SystemTable,
+    EFI_SYSTEM_TABLE *system_table,
     virtual_addr_table_t *table,
     uint64_t physical_address,
     uint64_t virtual_address,
@@ -130,7 +130,7 @@ int virtual_addr_map(
     // TODO: Validate that virtual address is aligned to 4KB.
     for (int i = 0; i < num_pages; i++) {
         int status = virtual_addr_map_page(
-            SystemTable,
+            system_table,
             table,
             physical_address + i * VIRTUAL_ADDR_GRANULE_SIZE,
             virtual_address + i * VIRTUAL_ADDR_GRANULE_SIZE,

@@ -4,7 +4,7 @@
 
 #include <Library/UefiLib.h>
 
-int kernel_loader_load(EFI_SYSTEM_TABLE *SystemTable, virtual_addr_table_t *table, kernel_elf_info_t *elf_info) {
+int kernel_loader_load(EFI_SYSTEM_TABLE *system_table, virtual_addr_table_t *table, kernel_elf_info_t *elf_info) {
     for (int i = 0; i < elf_info->num_segments; i++) {
         kernel_elf_segment_t *segment = &elf_info->segments[i];
 
@@ -15,7 +15,7 @@ int kernel_loader_load(EFI_SYSTEM_TABLE *SystemTable, virtual_addr_table_t *tabl
         }
 
         EFI_PHYSICAL_ADDRESS kernel_pages = 0;
-        EFI_STATUS status = SystemTable->BootServices->AllocatePages(
+        EFI_STATUS status = system_table->BootServices->AllocatePages(
             AllocateAnyPages,
             EfiLoaderData,
             num_pages,
@@ -28,14 +28,14 @@ int kernel_loader_load(EFI_SYSTEM_TABLE *SystemTable, virtual_addr_table_t *tabl
         }
 
         // Copy the kernel image into the allocated memory.
-        SystemTable->BootServices->CopyMem(
+        system_table->BootServices->CopyMem(
             (VOID *)kernel_pages,
             (VOID *)segment->loadable_segment_start,
             segment->loadable_segment_file_size
         );
 
         // Zero out the BSS section of the kernel (memory_size - file_size).
-        SystemTable->BootServices->SetMem(
+        system_table->BootServices->SetMem(
             (VOID *)(kernel_pages + segment->loadable_segment_file_size),
             segment->loadable_segment_memory_size - segment->loadable_segment_file_size,
             0
@@ -57,7 +57,7 @@ int kernel_loader_load(EFI_SYSTEM_TABLE *SystemTable, virtual_addr_table_t *tabl
 
         // Map the kernel image into the virtual address space.
         virtual_addr_map(
-            SystemTable,
+            system_table,
             table,
             kernel_pages,
             segment->image_start,

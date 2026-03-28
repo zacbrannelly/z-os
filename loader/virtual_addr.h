@@ -33,10 +33,10 @@ typedef struct virtual_addr_table_t {
     uint64_t root_page_table;
 } virtual_addr_table_t;
 
-int virtual_addr_allocate_table(EFI_SYSTEM_TABLE *SystemTable, virtual_addr_table_t *table);
+int virtual_addr_allocate_table(EFI_SYSTEM_TABLE *system_table, virtual_addr_table_t *table);
 
 int virtual_addr_map(
-    EFI_SYSTEM_TABLE *SystemTable,
+    EFI_SYSTEM_TABLE *system_table,
     virtual_addr_table_t *table,
     uint64_t physical_address,
     uint64_t virtual_address,
