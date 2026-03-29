@@ -56,7 +56,7 @@ int kernel_loader_load(EFI_SYSTEM_TABLE *system_table, virtual_addr_table_t *tab
         }
 
         // Map the kernel image into the virtual address space.
-        virtual_addr_map(
+        int result = virtual_addr_map(
             system_table,
             table,
             kernel_pages,
@@ -64,6 +64,10 @@ int kernel_loader_load(EFI_SYSTEM_TABLE *system_table, virtual_addr_table_t *tab
             num_pages,
             page_flags
         );
+        if (result < 0) {
+            Print(L"Failed to map kernel image into virtual address space: %r\r\n", result);
+            return -1;
+        }
     }
 
     return 0;

@@ -33,4 +33,8 @@ typedef struct kernel_elf_info_t {
     kernel_elf_segment_t segments[KERNEL_ELF_MAX_SEGMENTS];
 } kernel_elf_info_t;
 
-int kernel_elf_parse_info(uint8_t *elf_buffer, kernel_elf_info_t *info);
+int kernel_elf_parse_info(
+    uint8_t *elf_buffer,
+    uint64_t elf_buffer_size,
+    kernel_elf_info_t *info
+);

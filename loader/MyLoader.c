@@ -136,11 +136,11 @@ EFI_STATUS EFIAPI UefiMain (
   }
 
   // Allocate a buffer of the size of the kernel file.
-  UINTN kernel_file_size = (UINTN)file_info->FileSize;
+  UINTN kernel_elf_size = (UINTN)file_info->FileSize;
   uint8_t *kernel_elf_buffer = NULL;
   status = system_table->BootServices->AllocatePool(
     EfiLoaderData,
-    kernel_file_size,
+    kernel_elf_size,
     (VOID **)&kernel_elf_buffer
   );
   if (EFI_ERROR(status)) {
@@ -148,14 +148,14 @@ EFI_STATUS EFIAPI UefiMain (
     return status;
   }
 
-  status = file_protocol->Read(file_protocol, &kernel_file_size, kernel_elf_buffer);
+  status = file_protocol->Read(file_protocol, &kernel_elf_size, kernel_elf_buffer);
   if (EFI_ERROR(status)) {
     Print(L"Failed to read file: %r\r\n", status);
     return status;
   }
 
   kernel_elf_info_t kernel_elf_info;
-  if (kernel_elf_parse_info(kernel_elf_buffer, &kernel_elf_info) < 0) {
+  if (kernel_elf_parse_info(kernel_elf_buffer, kernel_elf_size, &kernel_elf_info) < 0) {
     Print(L"Failed to parse kernel ELF file: %r\r\n", status);
     return status;
   }
@@ -173,10 +173,16 @@ EFI_STATUS EFIAPI UefiMain (
 
   // Create VA table.
   virtual_addr_table_t table;
-  virtual_addr_allocate_table(system_table, &table);
+  if (virtual_addr_allocate_table(system_table, &table) < 0) {
+    Print(L"Failed to allocate virtual address table: %r\r\n", status);
+    return EFI_ABORTED;
+  }
 
   // Load the kernel into memory and map into VA space.
-  kernel_loader_load(system_table, &table, &kernel_elf_info);
+  if (kernel_loader_load(system_table, &table, &kernel_elf_info) < 0) {
+    Print(L"Failed to load kernel into memory: %r\r\n", status);
+    return EFI_ABORTED;
+  }
 
   // ============================================ Setup the boot info ============================================
 
@@ -225,14 +231,20 @@ EFI_STATUS EFIAPI UefiMain (
   kernel_elf_buffer = NULL;
 
   // ============================================ Exit boot services ============================================
-  exit_boot_services(image_handle, system_table);
+  status = exit_boot_services(image_handle, system_table);
+  if (EFI_ERROR(status)) {
+    Print(L"Failed to exit boot services: %r\r\n", status);
+    return status;
+  }
 
   // NOTE: NO MORE BOOT SERVICES CAN BE CALLED AFTER THIS POINT.
 
   // ============================================ Jump to the kernel ============================================
 
   // Enable MMU for TTBR1, using the VA table we've built.
-  virtual_addr_apply_to_ttbr1(&table);
+  if (virtual_addr_apply_to_ttbr1(&table) < 0) {
+    return -1;
+  }
 
   // TODO: Change the stack pointer to the top of the kernel stack (the end of the mapped stack space).
 
