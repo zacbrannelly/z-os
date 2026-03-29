@@ -1,0 +1,4 @@
+settings set target.source-map /opt/edk2/MyLoader ./
+b kernel_main
+gdb-remote localhost:1234
+c
