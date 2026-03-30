@@ -16,13 +16,19 @@ EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *simple_file_system_protocol;
 EFI_GRAPHICS_OUTPUT_PROTOCOL *graphics_output_protocol;
 
 typedef struct boot_info {
+  // Framebuffer information.
   uint32_t *framebuffer;
   uint32_t framebuffer_size;
   uint32_t framebuffer_width;
   uint32_t framebuffer_stride;
+
+  // Memory map provided by the bootloader.
+  void* memory_map;
+  uint64_t memory_map_size;
+  uint64_t memory_map_descriptor_size;
 } boot_info_t;
 
-EFI_STATUS exit_boot_services(IN EFI_HANDLE image_handle, IN EFI_SYSTEM_TABLE *system_table) {
+EFI_STATUS exit_boot_services(IN EFI_HANDLE image_handle, IN EFI_SYSTEM_TABLE *system_table, boot_info_t *boot_info) {
   UINTN memory_map_size = 0;
   UINTN map_key = 0;
   UINTN descriptor_size = 0;
@@ -75,8 +81,14 @@ EFI_STATUS exit_boot_services(IN EFI_HANDLE image_handle, IN EFI_SYSTEM_TABLE *s
   }
 
   if (EFI_ERROR(status)) {
+    Print(L"Failed to exit boot services: %r\r\n", status);
     return status;
   }
+
+  // Provide the memory map to the kernel.
+  boot_info->memory_map = memory_map;
+  boot_info->memory_map_size = memory_map_size;
+  boot_info->memory_map_descriptor_size = descriptor_size;
 
   return EFI_SUCCESS;
 }
@@ -231,7 +243,7 @@ EFI_STATUS EFIAPI UefiMain (
   kernel_elf_buffer = NULL;
 
   // ============================================ Exit boot services ============================================
-  status = exit_boot_services(image_handle, system_table);
+  status = exit_boot_services(image_handle, system_table, &boot_info);
   if (EFI_ERROR(status)) {
     Print(L"Failed to exit boot services: %r\r\n", status);
     return status;
