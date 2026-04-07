@@ -26,6 +26,9 @@ typedef struct boot_info {
   void* memory_map;
   uint64_t memory_map_size;
   uint64_t memory_map_descriptor_size;
+
+  // ACPI table.
+  void *acpi_table;
 } boot_info_t;
 
 EFI_STATUS exit_boot_services(IN EFI_HANDLE image_handle, IN EFI_SYSTEM_TABLE *system_table, boot_info_t *boot_info) {
@@ -215,11 +218,26 @@ EFI_STATUS EFIAPI UefiMain (
   boot_info.framebuffer_width = graphics_output_protocol->Mode->Info->HorizontalResolution;
   boot_info.framebuffer_stride = graphics_output_protocol->Mode->Info->HorizontalResolution * sizeof(uint32_t);
 
-  VOID *boot_info_physical_address = NULL;
+  Print(L"Framebuffer Base: 0x%lx\r\n", boot_info.framebuffer);
+  Print(L"Framebuffer Size: 0x%lx\r\n", boot_info.framebuffer_size);
+  Print(L"Framebuffer Width: 0x%lx\r\n", boot_info.framebuffer_width);
+  Print(L"Framebuffer Stride: 0x%lx\r\n", boot_info.framebuffer_stride);
+
+  for (int i = 0; i < system_table->NumberOfTableEntries; i++) {
+    EFI_CONFIGURATION_TABLE *table = &system_table->ConfigurationTable[i];
+    if (CompareGuid(&table->VendorGuid, &gEfiAcpiTableGuid)) {
+      Print(L"ACPI table found at: 0x%r\r\n", table->VendorTable);
+      boot_info.acpi_table = (void*)table->VendorTable;
+    }
+  }
+
+  // ============================================ Copy the boot info to physical memory ============================================
+
+  boot_info_t *boot_info_physical_address = NULL;
   status = system_table->BootServices->AllocatePool(
     EfiLoaderData,
     sizeof(boot_info_t),
-    &boot_info_physical_address
+    (VOID **)&boot_info_physical_address
   );
   if (EFI_ERROR(status)) {
     Print(L"Failed to allocate pool for boot info: %r\r\n", status);
@@ -243,7 +261,7 @@ EFI_STATUS EFIAPI UefiMain (
   kernel_elf_buffer = NULL;
 
   // ============================================ Exit boot services ============================================
-  status = exit_boot_services(image_handle, system_table, &boot_info);
+  status = exit_boot_services(image_handle, system_table, boot_info_physical_address);
   if (EFI_ERROR(status)) {
     Print(L"Failed to exit boot services: %r\r\n", status);
     return status;
@@ -262,7 +280,7 @@ EFI_STATUS EFIAPI UefiMain (
 
   // Jump to the kernel's entry point.
   void (*kernel_entry)(boot_info_t *) = (void (*)(boot_info_t *))kernel_elf_info.entry_point;
-  kernel_entry((boot_info_t *)boot_info_physical_address);
+  kernel_entry(boot_info_physical_address);
 
   return EFI_SUCCESS;
 }

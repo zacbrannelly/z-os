@@ -13,4 +13,7 @@ typedef struct boot_info {
     void* memory_map;
     uint64_t memory_map_size;
     uint64_t memory_map_descriptor_size;
+
+    // ACPI table provided by the bootloader.
+    void* acpi_table;
 } boot_info_t;

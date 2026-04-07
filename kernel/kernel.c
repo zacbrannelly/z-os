@@ -1,6 +1,15 @@
 #include "kernel.h"
+#include "format.h"
+#include "drivers/acpi/acpi.h"
+#include "drivers/pci/pcie.h"
+#include "drivers/pci/xhci.h"
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
+#include "string.h"
+#include "page_alloc.h"
+#include "mmap.h"
+
+#include <stddef.h>
 
 static const uint32_t clr_red = 0x00FF0000;
 
@@ -19,15 +28,52 @@ void clear_screen(boot_info_t *boot_info, uint32_t color) {
 }
 
 void kernel_main(boot_info_t *boot_info) {
+    // Initialize the serial port.
     pl011_driver_t serial;
     pl011_init(&serial, pl011_base_address, pl011_base_clock);
 
+    // Initialize the console.
     console_t console;
     uart_console_init(&console, &serial);
     console_set_active(&console);
 
+    // Initialize virtual memory mapping system.
+    mmap_init(
+        (efi_memory_descriptor_t *)boot_info->memory_map,
+        boot_info->memory_map_size,
+        boot_info->memory_map_descriptor_size
+    );
+
+    // Get the memory map (contains what physical memory is usable and what is reserved).
+    mmap_memory_descriptor_t *memory_map = NULL;
+    uint64_t memory_map_count = 0;
+    if (mmap_get_memory_map(&memory_map, &memory_map_count) < 0) {
+        console_write("Failed to get memory map\r\n");
+        return;
+    }
+
+    // Initialize a physical memory page allocator.
+    page_alloc_init(memory_map, memory_map_count);
+
     // Print the banner.
     console_write(g_banner);
+
+    console_write("Testing format_hex: ");
+    char buffer[17];
+    console_write("0x");
+    format_hex(buffer, sizeof(buffer), 0x1234ef);
+    console_write(buffer);
+    console_write("\r\n");
+
+    acpi_init(boot_info->acpi_table);
+    acpi_table_mcfg_entry_t *mcfg_entry = acpi_get_mcfg_entry();
+    if (mcfg_entry == 0) {
+        console_write("Failed to get MCFG entry\r\n");
+        return;
+    }
+
+    pcie_init(mcfg_entry);
+    xhci_init();
 
     while (1) {
         // Wait for a character to be received.

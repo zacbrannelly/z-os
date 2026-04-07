@@ -15,5 +15,6 @@ qemu-system-aarch64 \
   -device qemu-xhci \
   -usb \
   -device usb-kbd \
+  -device usb-mouse \
   -S \
   -s

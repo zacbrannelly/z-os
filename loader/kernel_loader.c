@@ -22,6 +22,8 @@ int kernel_loader_load(EFI_SYSTEM_TABLE *system_table, virtual_addr_table_t *tab
             &kernel_pages
         );
 
+        Print(L"Allocated %u pages for kernel at 0x%lx\r\n", num_pages, kernel_pages);
+
         if (EFI_ERROR(status)) {
             Print(L"Failed to allocate pages for kernel: %r\r\n", status);
             return -1;

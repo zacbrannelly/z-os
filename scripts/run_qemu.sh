@@ -14,4 +14,5 @@ qemu-system-aarch64 \
   -device virtio-gpu-pci \
   -device qemu-xhci \
   -usb \
-  -device usb-kbd
+  -device usb-kbd \
+  -device usb-mouse
