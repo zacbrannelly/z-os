@@ -2,6 +2,16 @@
 
 #include "console.h"
 
+int efi_memory_map_is_usable(efi_memory_descriptor_t *descriptor) {
+    return (
+        descriptor->type == EFI_MEMORY_TYPE_CONVENTIONAL ||
+        descriptor->type == EFI_MEMORY_TYPE_LOADER_CODE ||
+        descriptor->type == EFI_MEMORY_TYPE_BOOT_SERVICE_CODE ||
+        descriptor->type == EFI_MEMORY_TYPE_BOOT_SERVICE_DATA ||
+        descriptor->type == EFI_MEMORY_TYPE_PERSISTENT_MEMORY
+    );
+}
+
 void efi_memory_map_print_details(
     efi_memory_descriptor_t *efi_memory_map,
     uint64_t efi_memory_map_size,
