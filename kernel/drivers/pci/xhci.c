@@ -66,6 +66,16 @@
 // Doorbell offsets.
 #define XHCI_DOORBELL_CONTROLLER 0x0
 
+// Endpoint types.
+#define XHCI_ENDPOINT_TYPE_INVALID 0x0
+#define XHCI_ENDPOINT_TYPE_OUT_ISOCHRONOUS 0x1
+#define XHCI_ENDPOINT_TYPE_OUT_BULK 0x2
+#define XHCI_ENDPOINT_TYPE_OUT_INTERRUPT 0x3
+#define XHCI_ENDPOINT_TYPE_CONTROL 0x4
+#define XHCI_ENDPOINT_TYPE_IN_ISOCHRONOUS 0x5
+#define XHCI_ENDPOINT_TYPE_IN_BULK 0x6
+#define XHCI_ENDPOINT_TYPE_IN_INTERRUPT 0x7
+
 // Descriptor types.
 #define USB_DESCRIPTOR_TYPE_CONFIGURATION 0x2
 #define USB_DESCRIPTOR_TYPE_INTERFACE 0x4
@@ -248,6 +258,12 @@ typedef struct xhci_assigned_slot_t {
     xhci_input_context_t *input_context;
     xhci_trb_ring_t ep0_transfer_ring;
 } xhci_assigned_slot_t;
+
+typedef struct xhci_endpoint_t {
+    xhci_allocated_page_t transfer_ring_base;
+    xhci_trb_ring_t transfer_ring;
+    uint8_t endpoint_context_idx;
+} xhci_endpoint_t;
 
 static xhci_driver_t g_xhci_driver = {
     .mmio_base = NULL,
@@ -621,7 +637,7 @@ int xhci_allocate_dcba_array(void) {
     }
 
     // Zero out the DCBA.
-    memory_set((void *)dcba.virtual_address, 0, 4096);
+    memory_set((void *)dcba.virtual_address, 0, PAGE_SIZE);
 
     // Write the DCBA address to the DCBAAP register.
     xhci_write_op_register64(XHCI_OP_DCBAAP, dcba.physical_address);
@@ -643,7 +659,7 @@ int xhci_allocate_command_ring(void) {
     }
 
     // Zero out the command ring.
-    memory_set((void *)command_ring_base.virtual_address, 0, 4096);
+    memory_set((void *)command_ring_base.virtual_address, 0, PAGE_SIZE);
 
     // Write the command ring base to the CRCR register and set the CYCLE bit.
     xhci_write_op_register64(XHCI_OP_CRCR, command_ring_base.physical_address | 0x1);
@@ -669,7 +685,7 @@ int xhci_allocate_event_ring(void) {
     }
 
     // Zero out the ERST table.
-    memory_set((void *)event_ring_segment_table_base.virtual_address, 0, 4096);
+    memory_set((void *)event_ring_segment_table_base.virtual_address, 0, PAGE_SIZE);
     g_xhci_driver.event_ring_segment_table = (xhci_event_ring_segment_table_t *)event_ring_segment_table_base.virtual_address;
 
     // Allocate memory for the event ring segment.
@@ -684,7 +700,7 @@ int xhci_allocate_event_ring(void) {
     }
 
     // Zero out the event ring segment.
-    memory_set((void *)event_ring_segment_base.virtual_address, 0, 4096);
+    memory_set((void *)event_ring_segment_base.virtual_address, 0, PAGE_SIZE);
 
     // Create ERST table with a single entry mapping to a single event ring segment.
     xhci_event_ring_segment_table_t *erst = g_xhci_driver.event_ring_segment_table;
@@ -720,7 +736,7 @@ int xhci_command_is_successful(xhci_trb_t *trb) {
     return 1;
 }
 
-int xhci_enable_slot_command(uint8_t* enabled_slot_id) {
+int xhci_enable_device_slot(uint8_t* enabled_slot_id) {
     xhci_trb_t enable_slot_command = {
         .parameter_low = 0,
         .parameter_high = 0,
@@ -760,7 +776,7 @@ int xhci_allocate_device_context(uint8_t slot_id) {
         console_write("Failed to allocate DCBA page\r\n");
         return -1;
     }
-    memory_set((void *)dcba_page.virtual_address, 0, 4096);
+    memory_set((void *)dcba_page.virtual_address, 0, PAGE_SIZE);
 
     // Set the DCBA entry for the slot - must be a physical address.
     dcba_table[slot_id] = dcba_page.physical_address;
@@ -775,7 +791,7 @@ int xhci_address_device(uint8_t port_number, xhci_assigned_slot_t *out_assigned_
     }
 
     uint8_t slot_id = 0;
-    if (xhci_enable_slot_command(&slot_id) < 0) {
+    if (xhci_enable_device_slot(&slot_id) < 0) {
         return -1;
     }
 
@@ -790,7 +806,7 @@ int xhci_address_device(uint8_t port_number, xhci_assigned_slot_t *out_assigned_
         return -1;
     }
     uint64_t input_context_base = input_context_base_page.virtual_address;
-    memory_set((void *)input_context_base, 0, 4096);
+    memory_set((void *)input_context_base, 0, PAGE_SIZE);
 
     // Set A0 = "Slot Context" and A1 = "Endpoint Context 0" in the input control context.
     *((uint32_t *)input_context_base + 1) = 0x3; // 0b11
@@ -814,7 +830,7 @@ int xhci_address_device(uint8_t port_number, xhci_assigned_slot_t *out_assigned_
         console_write("Allocated transfer ring base is not aligned to 64 bytes\r\n");
         return -1;
     }
-    memory_set((void *)transfer_ring_base_page.virtual_address, 0, 4096);
+    memory_set((void *)transfer_ring_base_page.virtual_address, 0, PAGE_SIZE);
 
     endpoint_context->transfer_ring_dequeue_ptr = transfer_ring_base_page.physical_address | 0x1; // Set the cycle bit.
 
@@ -863,6 +879,10 @@ void xhci_ep0_ring_doorbell(xhci_assigned_slot_t *assigned_slot) {
     xhci_ring_doorbell(assigned_slot->slot_id, 0x1); // 0x1 = EP0 Enqueue Pointer Update
 }
 
+void xhci_endpoint_ring_doorbell(xhci_assigned_slot_t *assigned_slot, xhci_endpoint_t *endpoint) {
+    xhci_ring_doorbell(assigned_slot->slot_id, endpoint->endpoint_context_idx);
+}
+
 int xhci_get_device_descriptor(xhci_assigned_slot_t *assigned_slot, usb_device_descriptor_t *out_device_descriptor) {
     if (out_device_descriptor == NULL) {
         console_write("Output device descriptor is NULL\r\n");
@@ -888,7 +908,7 @@ int xhci_get_device_descriptor(xhci_assigned_slot_t *assigned_slot, usb_device_d
         console_write("Failed to allocate data stage buffer\r\n");
         return -1;
     }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, 4096);
+    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
 
     // Enqueue data stage TRB.
     xhci_trb_t data_stage_trb = {
@@ -951,7 +971,7 @@ int xhci_get_configuration_descriptor(
         console_write("Failed to allocate data stage buffer\r\n");
         return -1;
     }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, 4096);
+    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
 
     // Get the configuration descriptor.
     xhci_trb_t setup_packet_trb = {
@@ -1032,7 +1052,7 @@ int xhci_get_all_configuration_descriptors(
         console_write("Failed to allocate data stage buffer\r\n");
         return -1;
     }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, 4096);
+    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
 
     xhci_trb_t setup_packet_trb = {
         // bmRequestType = 0x80 (Dir = Device to Host, Type = Standard, Recipient = Device)
@@ -1208,6 +1228,139 @@ int xhci_allocate_heap(void) {
     }
 
     console_write("XHCI heap mapped successfully\r\n");
+    return 0;
+}
+
+int xhci_configure_endpoint(
+    xhci_assigned_slot_t *assigned_slot,
+    usb_endpoint_descriptor_t *endpoint_descriptor,
+    xhci_endpoint_t *endpoint
+) {
+    if (assigned_slot == NULL) {
+        console_write("Input assigned slot is NULL\r\n");
+        return -1;
+    }
+
+    if (endpoint_descriptor == NULL) {
+        console_write("Input endpoint descriptor is NULL\r\n");
+        return -1;
+    }
+
+    if (endpoint == NULL) {
+        console_write("Input endpoint is NULL\r\n");
+        return -1;
+    }
+    
+    uint8_t endpoint_address = endpoint_descriptor->bEndpointAddress & 0x7f;
+    uint32_t endpoint_context_index = 0;
+    uint8_t endpoint_type = 0;
+    if ((endpoint_descriptor->bEndpointAddress & (1 << 7)) > 0) {
+        // IN endpoint.
+        endpoint->endpoint_context_idx = 2 * (uint32_t)endpoint_address + 1;
+
+        switch (endpoint_descriptor->bmAttributes & 0x3) {
+            case 0x0:
+                endpoint_type = XHCI_ENDPOINT_TYPE_CONTROL;
+                break;
+            case 0x1:
+                endpoint_type = XHCI_ENDPOINT_TYPE_IN_ISOCHRONOUS;
+                break;
+            case 0x2:
+                endpoint_type = XHCI_ENDPOINT_TYPE_IN_BULK;
+                break;
+            case 0x3:
+                endpoint_type = XHCI_ENDPOINT_TYPE_IN_INTERRUPT;
+                break;
+            default:
+                console_write("Invalid endpoint type\r\n");
+                return -1;
+        }
+    } else {
+        // OUT endpoint.
+        endpoint->endpoint_context_idx = 2 * (uint32_t)endpoint_address;
+
+        switch (endpoint_descriptor->bmAttributes & 0x3) {
+            case 0x0:
+                endpoint_type = XHCI_ENDPOINT_TYPE_CONTROL;
+                break;
+            case 0x1:
+                endpoint_type = XHCI_ENDPOINT_TYPE_OUT_ISOCHRONOUS;
+                break;
+            case 0x2:
+                endpoint_type = XHCI_ENDPOINT_TYPE_OUT_BULK;
+                break;
+            case 0x3:
+                endpoint_type = XHCI_ENDPOINT_TYPE_OUT_INTERRUPT;
+                break;
+            default:
+                console_write("Invalid endpoint type\r\n");
+                return -1;
+        } 
+    }
+
+    xhci_allocated_page_t input_context_base;
+    if (xhci_alloc_page(&input_context_base) < 0) {
+        console_write("Failed to allocate input context base\r\n");
+        return -1;
+    }
+    memory_set((void *)input_context_base.virtual_address, 0, PAGE_SIZE);
+
+    xhci_input_context_t *input_context = (xhci_input_context_t *)input_context_base.virtual_address;
+    input_context->add_context_flags = 0x1 | (1 << endpoint->endpoint_context_idx); // Set Slot Context update and Endpoint Context update bits.
+
+    xhci_slot_context_t *slot_context = (xhci_slot_context_t *)(
+        input_context_base.virtual_address +
+        sizeof(xhci_input_context_t)
+    );
+    slot_context->root_hub_port_number = assigned_slot->port_number;
+    SLOT_CONTEXT_SET_CONTEXT_ENTRIES(slot_context, endpoint->endpoint_context_idx);
+
+    // Create the endpoint transfer ring.
+    if (xhci_alloc_page(&endpoint->transfer_ring_base) < 0) {
+        console_write("Failed to allocate endpoint context 1 transfer ring base\r\n");
+        return -1;
+    }
+    memory_set((void *)endpoint->transfer_ring_base.virtual_address, 0, PAGE_SIZE);
+    xhci_transfer_ring_init(&endpoint->transfer_ring, &endpoint->transfer_ring_base, 256);
+
+    xhci_endpoint_context_t *input_endpoint_context = (xhci_endpoint_context_t *)(
+        (uint64_t)slot_context +
+        endpoint->endpoint_context_idx * sizeof(xhci_endpoint_context_t)
+    );
+    ENDPOINT_CONTEXT_SET_EP_TYPE(input_endpoint_context, endpoint_type);
+    ENDPOINT_CONTEXT_SET_CErr(input_endpoint_context, 0x3); // 3 retries on error.
+    input_endpoint_context->max_packet_size = endpoint_descriptor->wMaxPacketSize & 0x7ff;
+    input_endpoint_context->average_trb_length = input_endpoint_context->max_packet_size;
+    input_endpoint_context->interval = endpoint_descriptor->bInterval;
+    input_endpoint_context->transfer_ring_dequeue_ptr = endpoint->transfer_ring_base.physical_address | 0x1; // Set the cycle bit.
+    input_endpoint_context->max_esit_payload_low = input_endpoint_context->max_packet_size;
+
+    xhci_trb_t configure_endpoint_trb = {
+        .parameter_low = (uint32_t)input_context_base.physical_address,
+        .parameter_high = (uint32_t)(input_context_base.physical_address >> 32),
+        .status = 0,
+        .control = XHCI_TRB_TYPE_CONFIGURE_ENDPOINT_COMMAND | (assigned_slot->slot_id << 24)
+    };
+    xhci_command_ring_enqueue(&configure_endpoint_trb);
+
+    // Wait for an event to be available on the event ring.
+    xhci_ring_command_doorbell();
+    xhci_event_ring_wait_for_event(&g_xhci_driver.event_ring);
+
+    xhci_trb_t event_trb;
+    xhci_event_ring_dequeue(&g_xhci_driver.event_ring, &event_trb);
+
+    if (!xhci_trb_is_type(&event_trb, XHCI_TRB_TYPE_COMMAND_COMPLETION)) {
+        console_write("Event TRB is not a command completion\r\n");
+        return -1;
+    }
+
+    if (!xhci_command_is_successful(&event_trb)) {
+        return -1;
+    }
+    console_write("Configure endpoint command completed successfully\r\n");    
+
+    xhci_free_page(&input_context_base);
     return 0;
 }
 
@@ -1387,18 +1540,6 @@ int xhci_init(void) {
     console_write_hex(configuration_descriptor.bMaxPower);
     console_write("\r\n");
 
-    xhci_trb_t setup_packet_trb;
-    xhci_trb_t data_stage_trb;
-    xhci_trb_t status_stage_trb;
-
-    // Allocate a data stage buffer.
-    xhci_allocated_page_t data_stage_buffer;
-    if (xhci_alloc_page(&data_stage_buffer) < 0) {
-        console_write("Failed to allocate data stage buffer\r\n");
-        return -1;
-    }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, 4096);
-
     usb_descriptor_header_t *descriptors = NULL;
     if (xhci_get_all_configuration_descriptors(&assigned_slot, &configuration_descriptor, &descriptors) < 0) {
         console_write("Failed to get all configuration descriptors\r\n");
@@ -1485,72 +1626,23 @@ int xhci_init(void) {
         return -1;
     }
 
-    // TODO: Enable the endpoint at address endpoint_descriptor->bEndpointAddress (0x81 = Address 0x1 and Direction = IN).
-    uint8_t endpoint_address = endpoint_descriptor->bEndpointAddress & 0x7f;
-    uint32_t endpoint_context_index = 0;
-    if ((endpoint_descriptor->bEndpointAddress & (1 << 7)) > 0) {
-        // IN endpoint.
-        endpoint_context_index = 2 * (uint32_t)endpoint_address + 1;
-    } else {
-        // OUT endpoint.
-        endpoint_context_index = 2 * (uint32_t)endpoint_address;
-    }
-
-    xhci_input_context_t *input_device_context = assigned_slot.input_context;
-    input_device_context->drop_context_flags = 0;
-    input_device_context->add_context_flags = (1 << 0) | (1 << endpoint_context_index); // A0 (Slot Context Update), A3 (Endpoint Context 1 IN Update)
-
-    xhci_slot_context_t *slot_context = (xhci_slot_context_t *)((uint64_t)input_device_context + sizeof(xhci_input_context_t));
-    SLOT_CONTEXT_SET_CONTEXT_ENTRIES(slot_context, endpoint_context_index);
-
-    // Create EP Context 1 IN.
-    xhci_allocated_page_t endpoint_context_1_transfer_ring_base;
-    if (xhci_alloc_page(&endpoint_context_1_transfer_ring_base) < 0) {
-        console_write("Failed to allocate endpoint context 1 transfer ring base\r\n");
-        return -1;
-    }
-    memory_set((void *)endpoint_context_1_transfer_ring_base.virtual_address, 0, 4096);
-
-    xhci_trb_ring_t endpoint_context_1_transfer_ring;
-    xhci_transfer_ring_init(&endpoint_context_1_transfer_ring, &endpoint_context_1_transfer_ring_base, 256);
-
-    xhci_endpoint_context_t *input_endpoint_context_1_in = (xhci_endpoint_context_t *)((uint64_t)slot_context + endpoint_context_index * sizeof(xhci_endpoint_context_t));
-    ENDPOINT_CONTEXT_SET_EP_TYPE(input_endpoint_context_1_in, 0x7); // Interrupt IN Endpoint (0x7)
-    ENDPOINT_CONTEXT_SET_CErr(input_endpoint_context_1_in, 0x3); // 3 retries on error.
-    input_endpoint_context_1_in->max_packet_size = endpoint_descriptor->wMaxPacketSize & 0x7ff;
-    input_endpoint_context_1_in->interval = endpoint_descriptor->bInterval;
-    input_endpoint_context_1_in->transfer_ring_dequeue_ptr = endpoint_context_1_transfer_ring_base.physical_address | 0x1; // Set the cycle bit.
-    input_endpoint_context_1_in->average_trb_length = 0x4; // 4 bytes for reports from the mouse.
-    input_endpoint_context_1_in->max_esit_payload_low = input_endpoint_context_1_in->max_packet_size;
-
-    xhci_trb_t configure_endpoint_trb = {
-        .parameter_low = (uint32_t)assigned_slot.input_context_base.physical_address,
-        .parameter_high = (uint32_t)(assigned_slot.input_context_base.physical_address >> 32),
-        .status = 0,
-        .control = XHCI_TRB_TYPE_CONFIGURE_ENDPOINT_COMMAND | (slot_id << 24)
-    };
-    xhci_transfer_ring_enqueue(command_ring, &configure_endpoint_trb);
-    xhci_ring_command_doorbell();
-
-    // Wait for an event to be available on the event ring.
-    xhci_event_ring_wait_for_event(event_ring);
-    console_write("Event ring has a valid TRB\r\n");
-
-    xhci_event_ring_dequeue(event_ring, &event_trb);
-
-    if (!xhci_trb_is_type(&event_trb, XHCI_TRB_TYPE_COMMAND_COMPLETION)) {
-        console_write("Event TRB is not a command completion\r\n");
+    // Enable the endpoint.
+    xhci_endpoint_t endpoint;
+    if (xhci_configure_endpoint(&assigned_slot, endpoint_descriptor, &endpoint) < 0) {
+        console_write("Failed to configure endpoint\r\n");
         return -1;
     }
 
-    if (!xhci_command_is_successful(&event_trb)) {
+    // Allocate a data stage buffer.
+    xhci_allocated_page_t data_stage_buffer;
+    if (xhci_alloc_page(&data_stage_buffer) < 0) {
+        console_write("Failed to allocate data stage buffer\r\n");
         return -1;
     }
-
-    console_write("Configure endpoint command completed successfully\r\n");
+    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
 
     while (1) {
-        memory_set((void *)data_stage_buffer.virtual_address, 0, 4096);
+        memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
 
         // Enqueue a Normal TRB for the endpoint to fetch data from the device.
         xhci_trb_t mouse_transfer_trb = {
@@ -1559,8 +1651,8 @@ int xhci_init(void) {
             .status = 0x4, // Transfer Size = 0x4 (4 bytes)
             .control = XHCI_TRB_TYPE_NORMAL | (1 << 5) | (1 << 2) // IOC = 1.
         };
-        xhci_transfer_ring_enqueue(&endpoint_context_1_transfer_ring, &mouse_transfer_trb);
-        xhci_ring_doorbell(slot_id, endpoint_context_index);
+        xhci_transfer_ring_enqueue(&endpoint.transfer_ring, &mouse_transfer_trb);
+        xhci_endpoint_ring_doorbell(&assigned_slot, &endpoint);
 
         // Wait for an event to be available on the event ring.
         xhci_event_ring_wait_for_event(event_ring);
