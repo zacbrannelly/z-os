@@ -11,7 +11,7 @@
 
 #include <stddef.h>
 
-static const uint32_t clr_red = 0x00FF0000;
+static const uint32_t clr_white = 0x00FFFFFF;
 
 // TODO: Get these from the bootloader.
 static const uint64_t pl011_base_address = 0x09000000;
@@ -28,6 +28,9 @@ void clear_screen(boot_info_t *boot_info, uint32_t color) {
 }
 
 void kernel_main(boot_info_t *boot_info) {
+    // Clear the screen
+    clear_screen(boot_info, clr_white);
+
     // Initialize the serial port.
     pl011_driver_t serial;
     pl011_init(&serial, pl011_base_address, pl011_base_clock);
@@ -97,9 +100,6 @@ void kernel_main(boot_info_t *boot_info) {
         // Echo the character back to the serial port.
         console_putc(c);
     }
-
-    // Clear the screen (red)
-    clear_screen(boot_info, g_counter);
 
     // Spin forever
     while (1) {

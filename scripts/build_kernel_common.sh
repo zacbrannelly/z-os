@@ -29,6 +29,8 @@ for source_path in "${kernel_sources[@]}"; do
     -ffreestanding \
     -fno-builtin \
     -fno-stack-protector \
+    -fno-strict-aliasing \
+    -fno-strict-overflow \
     "${optimization_flag}" \
     ${debug_flag:+"${debug_flag}"}
 

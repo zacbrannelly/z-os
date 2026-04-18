@@ -689,6 +689,51 @@ int mmap_build_ttbr0_table() {
     return 0;
 }
 
+static int recursive_copy_table(uint64_t *src_table, uint64_t **out_table, int level) {
+    uint64_t *dst_table = NULL;
+    if (alloc_new_table(&dst_table) < 0) {
+        return -1;
+    }
+    
+    for (int i = 0; i < MMAP_GRANULE_SIZE / sizeof(uint64_t); i++) {
+        uint64_t entry = src_table[i];
+
+        // No valid entry, so nothing to do.
+        if ((entry & TBL_ENTRY_VALID) == 0) {
+            continue;
+        }
+
+        if ((entry & TBL_ENTRY_TABLE) != 0 && level < 3) {
+            // Case 1: Entry is valid and a table entry (links to a lower level table).
+            uint64_t *next_table = (uint64_t *)(entry & TBL_ENTRY_ADDR_MASK);
+            uint64_t *new_table = NULL;
+            if (recursive_copy_table(next_table, &new_table, level + 1) < 0) {
+                return -1;
+            }
+
+            // Copy all page flags from the original entry, except for the address.
+            dst_table[i] = (
+                (entry & ~TBL_ENTRY_ADDR_MASK) |
+                ((uint64_t)new_table & TBL_ENTRY_ADDR_MASK)
+            );
+        } else {
+            // Maps to a block/page of memory, we want to copy the entry directly.
+            dst_table[i] = entry;
+        }
+    }
+
+    *out_table = dst_table;
+    return 0;
+}
+
+int mmap_build_ttbr1_table() {
+    // Copy the existing TTBR1 table to the kernel's translation table.
+    // This table was created by our OS loader, so we can trust it to be valid.
+    uint64_t ttbr1 = read_ttbr1();
+    uint64_t *root = (uint64_t *)(ttbr1 & TBL_ENTRY_ADDR_MASK);
+    return recursive_copy_table(root, &g_ttbr1_table, 0);
+}
+
 static int mmap_apply_ttbr0_table() {
     uint64_t ttbr0 = (uint64_t)g_ttbr0_table & TBL_ENTRY_ADDR_MASK;
     uint64_t tcr = read_tcr();
@@ -757,11 +802,10 @@ int mmap_apply_mappings(void) {
     }
 
     // Apply the TTBR1 table.
-    // TODO: Enable this once we have setup correct mappings for TTBR1.
-    // if (mmap_apply_ttbr1_table() < 0) {
-    //     console_write("Failed to apply TTBR1 table\r\n");
-    //     return -1;
-    // }
+    if (mmap_apply_ttbr1_table() < 0) {
+        console_write("Failed to apply TTBR1 table\r\n");
+        return -1;
+    }
 
     // Invalidate stale EL1 stage-1 translations.
     __asm__ volatile("tlbi vmalle1");
@@ -795,7 +839,13 @@ int mmap_init(
         return -1;
     }
 
-    // Apply the TTBR0 table.
+    // Build the TTBR1 table.
+    if (mmap_build_ttbr1_table() < 0) {
+        console_write("Failed to build TTBR1 table\r\n");
+        return -1;
+    }
+
+    // Apply the mappings to the CPUs translation tables.
     if (mmap_apply_mappings() < 0) {
         console_write("Failed to apply mappings to the CPUs translation tables\r\n");
         return -1;
@@ -1130,5 +1180,60 @@ int mmap_map_page(
         (physical_address & TBL_ENTRY_ADDR_MASK)
     );
 
+    return 0;
+}
+
+int mmap_virtual_to_physical(
+    uint64_t virtual_address,
+    uint64_t *physical_address
+) {
+    uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_address);
+    if (*ttbr_table_ptr == NULL) {
+        return -1;
+    }
+
+    uint64_t *ttbr_table = *ttbr_table_ptr;
+    uint64_t l0_index = (virtual_address >> 39) & 0x1FF;
+    uint64_t l1_index = (virtual_address >> 30) & 0x1FF;
+    uint64_t l2_index = (virtual_address >> 21) & 0x1FF;
+    uint64_t l3_index = (virtual_address >> 12) & 0x1FF;
+
+    uint64_t l0_entry = ttbr_table[l0_index];
+    if ((l0_entry & TBL_ENTRY_VALID) == 0) {
+        return -1;
+    }
+
+    uint64_t *l0_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
+    uint64_t l1_entry = l0_page_table[l1_index];
+    if ((l1_entry & TBL_ENTRY_VALID) == 0) {
+        return -1;
+    }
+    
+    // Block entry, return the physical address.
+    if ((l1_entry & TBL_ENTRY_TABLE) == 0) {
+        *physical_address = (l1_entry & TBL_ENTRY_L1_BLOCK_ADDR_MASK) | (virtual_address & (TBL_L1_BLOCK_SIZE - 1));
+        return 0;
+    }
+
+    uint64_t *l1_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
+    uint64_t l2_entry = l1_page_table[l2_index];
+    if ((l2_entry & TBL_ENTRY_VALID) == 0) {
+        return -1;
+    }
+
+    // Block entry, return the physical address.
+    if ((l2_entry & TBL_ENTRY_TABLE) == 0) {
+        *physical_address = (l2_entry & TBL_ENTRY_L2_BLOCK_ADDR_MASK) | (virtual_address & (TBL_L2_BLOCK_SIZE - 1));
+        return 0;
+    }
+
+    uint64_t *l2_page_table = (uint64_t *)(l2_entry & TBL_ENTRY_ADDR_MASK);
+    uint64_t l3_entry = l2_page_table[l3_index];
+    if ((l3_entry & TBL_ENTRY_VALID) == 0) {
+        return -1;
+    }
+
+    // Page entry, return the physical address.
+    *physical_address = (l3_entry & TBL_ENTRY_ADDR_MASK) | (virtual_address & (MMAP_GRANULE_SIZE - 1));
     return 0;
 }

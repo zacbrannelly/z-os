@@ -13,8 +13,8 @@
 #define TBL_ENTRY_L1_BLOCK_ADDR_MASK (TBL_ENTRY_ADDR_MASK & ~((1ULL << 30) - 1))
 #define TBL_ENTRY_L2_BLOCK_ADDR_MASK (TBL_ENTRY_ADDR_MASK & ~((1ULL << 21) - 1))
 
-#define TBL_L1_BLOCK_SIZE (1ULL << 30)
-#define TBL_L2_BLOCK_SIZE (1ULL << 21)
+#define TBL_L1_BLOCK_SIZE (1ULL << 30) // 1GB
+#define TBL_L2_BLOCK_SIZE (1ULL << 21) // 2MiB
 
 #define PAGE_FLAG_ACCESS (1ULL << 10)
 #define PAGE_FLAG_INNER_SHARABLE (3ULL << 8)
@@ -63,6 +63,12 @@ int mmap_get_memory_map(
 
 int mmap_apply_mappings(void);
 
+int mmap_virtual_to_physical(
+    uint64_t virtual_address,
+    uint64_t *physical_address
+);
+
+// Maps a range of L2 blocks (2MiB each)
 int mmap_map_range_l2_block(
     uint64_t virtual_start_address,
     uint64_t virtual_end_address,
@@ -70,19 +76,21 @@ int mmap_map_range_l2_block(
     uint64_t page_flags
 );
 
+// Maps a single L2 block (2MiB)
 int mmap_map_l2_block(
     uint64_t virtual_address,
     uint64_t physical_address,
     uint64_t page_flags
 );
 
+// Maps a range of L1 blocks (1GB each)
 int mmap_map_range_l1_block(
     uint64_t virtual_start_address,
     uint64_t virtual_end_address,
     uint64_t physical_start_address,
     uint64_t page_flags
 );
-
+// Maps a single L1 block (1GB)
 int mmap_map_l1_block(
     uint64_t virtual_address,
     uint64_t physical_address,
