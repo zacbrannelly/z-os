@@ -5,14 +5,20 @@
 #include "../../format.h"
 #include "../../page_alloc.h"
 #include "../../mmap.h"
+#include "../../utils/ring_buffer.h"
+#include "../usb/usb_core.h"
 
 #include <stdint.h>
 #include <stddef.h>
 
 // Where to map the XHCI heap (general purpose memory mapped as normal non-cached memory).
-#define XHCI_HEAP_VIRTUAL_BASE 0xffffffff80000000
+#define XHCI_HEAP_VIRTUAL_BASE 0xffffffff80000000ULL
 #define XHCI_HEAP_SIZE (1ULL << 21) // 2MiB
 #define XHCI_HEAP_MAX_PAGES (XHCI_HEAP_SIZE / PAGE_SIZE)
+
+#define XHCI_MAX_NUM_SLOTS (1 << 8)
+#define XHCI_MAX_NUM_ENDPOINTS (1 << 5)
+#define XHCI_MAX_NUM_TRANSFER_JOBS (1 << 8)
 
 // Cap register offsets.
 #define XHCI_CAP_HCSPARAMS1 0x4
@@ -32,6 +38,10 @@
 #define XHCI_PORT_PORTPMSC  0x4
 #define XHCI_PORT_PORTLI    0x8
 #define XHCI_PORT_PORTHLPMC 0xc
+
+// PORTSC bits.
+#define XHCI_PORTSC_CONNECT_STATUS(portsc) (portsc & 0x1)
+#define XHCI_PORTSC_PORT_ENABLED(portsc) (portsc & 0x2)
 
 // Runtime register offsets.
 #define XHCI_RT_ERSTSZ(x) (0x28 + 32 * x)
@@ -57,6 +67,18 @@
 #define XHCI_TRB_TYPE_DATA_STAGE                 XHCI_TRB_TYPE(0x3)
 #define XHCI_TRB_TYPE_STATUS_STAGE               XHCI_TRB_TYPE(0x4)
 
+// Setup Stage TRB control field bits.
+#define XHCI_TRB_CONTROL_ISP          (1 << 2)
+#define XHCI_TRB_CONTROL_IOC          (1 << 5)
+#define XHCI_TRB_CONTROL_IDT          (1 << 6)
+#define XHCI_TRB_CONTROL_TRT(x)       (((x) & 0x3) << 16)
+#define XHCI_TRB_CONTROL_TRT_NO_DATA  XHCI_TRB_CONTROL_TRT(0x0)
+#define XHCI_TRB_CONTROL_TRT_DATA_OUT XHCI_TRB_CONTROL_TRT(0x2)
+#define XHCI_TRB_CONTROL_TRT_DATA_IN  XHCI_TRB_CONTROL_TRT(0x3)
+
+// Data Stage TRB control field bits.
+#define XHCI_TRB_DATA_STAGE_IN_DIRECTION (1 << 16)
+
 #define XHCI_COMPLETION_CODE_SUCCESS 0x1
 
 // TRB Control bits
@@ -76,11 +98,6 @@
 #define XHCI_ENDPOINT_TYPE_IN_BULK 0x6
 #define XHCI_ENDPOINT_TYPE_IN_INTERRUPT 0x7
 
-// Descriptor types.
-#define USB_DESCRIPTOR_TYPE_CONFIGURATION 0x2
-#define USB_DESCRIPTOR_TYPE_INTERFACE 0x4
-#define USB_DESCRIPTOR_TYPE_ENDPOINT 0x5
-
 typedef struct xhci_trb_t {
     uint32_t parameter_low;
     uint32_t parameter_high;
@@ -88,16 +105,11 @@ typedef struct xhci_trb_t {
     uint32_t control;
 } xhci_trb_t;
 
-typedef struct xhci_trb_ring_t {
-    // Volatile is important here - can cause stale reads if not used.
-    volatile xhci_trb_t* base_address;
-    volatile xhci_trb_t* enqueue_ptr;
-    volatile xhci_trb_t* dequeue_ptr;
-    volatile xhci_trb_t* link_trb;
-    uint64_t ring_size;
-    uint64_t entry_count;
-    uint8_t cycle_bit;
-} xhci_trb_ring_t;
+#define XHCI_EVENT_TRB_COMPLETION_CODE(trb) ((trb)->status >> 24) & 0xff
+#define XHCI_EVENT_TRB_SLOT_ID(trb) ((trb)->control >> 24) & 0xff
+#define XHCI_EVENT_TRB_ENDPOINT_ID(trb) ((trb)->control >> 16) & 0x1f
+#define XHCI_EVENT_TRB_TYPE(trb) ((trb)->control >> 10) & 0x3f
+#define XHCI_EVENT_TRB_TRANSFER_LENGTH(trb) ((trb)->status & 0xffffff)
 
 typedef struct xhci_event_ring_segment_table_t {
     uint64_t ring_segment_base_address;
@@ -168,59 +180,24 @@ typedef struct xhci_endpoint_context_t {
 #define ENDPOINT_CONTEXT_SET_EP_TYPE(context, type) CLEAR_AND_SET((context)->control, BIT_MASK(3) << 3, (type) << 3)
 #define ENDPOINT_CONTEXT_SET_CErr(context, c_err)   CLEAR_AND_SET((context)->control, BIT_MASK(2) << 1, (c_err) << 1)
 
-typedef struct usb_device_descriptor_t {
-    uint8_t bLength;
-    uint8_t bDescriptorType;
-    uint16_t bcdUSB;
-    uint8_t bDeviceClass;
-    uint8_t bDeviceSubClass;
-    uint8_t bDeviceProtocol;
-    uint8_t bMaxPacketSize0;
-    uint16_t idVendor;
-    uint16_t idProduct;
-    uint16_t bcdDevice;
-    uint8_t iManufacturer;
-    uint8_t iProduct;
-    uint8_t iSerialNumber;
-    uint8_t bNumConfigurations;
-} __attribute__((packed)) usb_device_descriptor_t;
+typedef struct xhci_transfer_job_t {
+    xhci_transfer_callback_t callback;
+    void *callback_context;
+    xhci_allocated_page_t data_buffer;
+    uint64_t transfer_length;
+    uint8_t has_data;
+} xhci_transfer_job_t;
 
-typedef struct usb_configuration_descriptor_t {
-    uint8_t bLength;
-    uint8_t bDescriptorType;
-    uint16_t wTotalLength;
-    uint8_t bNumInterfaces;
-    uint8_t bConfigurationValue;
-    uint8_t iConfiguration;
-    uint8_t bmAttributes;
-    uint8_t bMaxPower;
-} __attribute__((packed)) usb_configuration_descriptor_t;
+typedef struct xhci_endpoint_state_t {
+    xhci_transfer_job_t transfer_job_base[XHCI_MAX_NUM_TRANSFER_JOBS];
+    ring_buffer_t transfer_jobs;
+} xhci_endpoint_state_t;
 
-typedef struct usb_descriptor_header_t {
-    uint8_t bLength;
-    uint8_t bDescriptorType;
-} __attribute__((packed)) usb_descriptor_header_t;
-
-typedef struct usb_interface_descriptor_t {
-    uint8_t bLength;
-    uint8_t bDescriptorType;
-    uint8_t bInterfaceNumber;
-    uint8_t bAlternateSetting;
-    uint8_t bNumEndpoints;
-    uint8_t bInterfaceClass;
-    uint8_t bInterfaceSubClass;
-    uint8_t bInterfaceProtocol;
-    uint8_t iInterface;
-} __attribute__((packed)) usb_interface_descriptor_t;
-
-typedef struct usb_endpoint_descriptor_t {
-    uint8_t bLength;
-    uint8_t bDescriptorType;
-    uint8_t bEndpointAddress;
-    uint8_t bmAttributes;
-    uint16_t wMaxPacketSize;
-    uint8_t bInterval;
-} __attribute__((packed)) usb_endpoint_descriptor_t;
+typedef struct xhci_device_state_t {
+    uint8_t enabled;
+    xhci_endpoint_state_t endpoints[XHCI_MAX_NUM_ENDPOINTS];
+    uint8_t num_configured_endpoints;
+} xhci_device_state_t;
 
 typedef struct xhci_driver_t {
     volatile uint8_t *mmio_base;         // Base address of the MMIO registers.
@@ -243,27 +220,10 @@ typedef struct xhci_driver_t {
     xhci_trb_ring_t command_ring;
     xhci_trb_ring_t event_ring;
     xhci_event_ring_segment_table_t *event_ring_segment_table;
+
+    // Indexed by slot ID.
+    xhci_device_state_t devices[XHCI_MAX_NUM_SLOTS];
 } xhci_driver_t;
-
-typedef struct xhci_allocated_page_t {
-    uint64_t virtual_address;
-    uint64_t physical_address;
-} xhci_allocated_page_t;
-
-typedef struct xhci_assigned_slot_t {
-    uint8_t slot_id;
-    uint8_t port_number;
-
-    xhci_allocated_page_t input_context_base;
-    xhci_input_context_t *input_context;
-    xhci_trb_ring_t ep0_transfer_ring;
-} xhci_assigned_slot_t;
-
-typedef struct xhci_endpoint_t {
-    xhci_allocated_page_t transfer_ring_base;
-    xhci_trb_ring_t transfer_ring;
-    uint8_t endpoint_context_idx;
-} xhci_endpoint_t;
 
 static xhci_driver_t g_xhci_driver = {
     .mmio_base = NULL,
@@ -420,7 +380,12 @@ int xhci_alloc_page(xhci_allocated_page_t *allocated_page) {
 int xhci_free_page(xhci_allocated_page_t *allocated_page) {
     uint64_t page_idx = (uint64_t)(allocated_page->virtual_address - XHCI_HEAP_VIRTUAL_BASE) / PAGE_SIZE;
     if (page_idx >= XHCI_HEAP_MAX_PAGES) {
-        console_write("Invalid page index\r\n");
+        console_write("Invalid page index ");
+        console_write_hex(page_idx);
+        console_write("\r\n");
+        console_write("XHCI heap max pages: ");
+        console_write_hex(XHCI_HEAP_MAX_PAGES);
+        console_write("\r\n");
         return -1;
     }
     g_xhci_driver.heap_page_allocated[page_idx] = 0;
@@ -764,8 +729,25 @@ int xhci_enable_device_slot(uint8_t* enabled_slot_id) {
     }
 
     // Extract the slot ID from the completion event TRB.
-    uint8_t slot_id = (event_trb.control >> 24) & 0xff;
+    uint8_t slot_id = XHCI_EVENT_TRB_SLOT_ID(&event_trb);
     *enabled_slot_id = slot_id;
+
+    // Mark the device as enabled.
+    xhci_device_state_t *device_state = &g_xhci_driver.devices[slot_id];
+    device_state->enabled = 1;
+
+    // Initialize the job queues for each endpoint.
+    // TODO: We probably only need to do this for endpoints we configure.
+    for (uint8_t i = 0; i < XHCI_MAX_NUM_ENDPOINTS; i++) {
+        xhci_endpoint_state_t *endpoint_state = &device_state->endpoints[i];
+        ring_buffer_init(
+            &endpoint_state->transfer_jobs,
+            (uint64_t)&endpoint_state->transfer_job_base,
+            XHCI_MAX_NUM_TRANSFER_JOBS,
+            sizeof(xhci_transfer_job_t)
+        );
+    }
+
     return 0;
 }
 
@@ -784,8 +766,8 @@ int xhci_allocate_device_context(uint8_t slot_id) {
     return 0;
 }
 
-int xhci_address_device(uint8_t port_number, xhci_assigned_slot_t *out_assigned_slot) {
-    if (out_assigned_slot == NULL) {
+int xhci_address_device(uint8_t port_number, xhci_device_t *out_device) {
+    if (out_device == NULL) {
         console_write("Output assigned slot is NULL\r\n");
         return -1;
     }
@@ -845,7 +827,6 @@ int xhci_address_device(uint8_t port_number, xhci_assigned_slot_t *out_assigned_
 
     // Wait for an event to be available on the event ring.
     xhci_event_ring_wait_for_event(&g_xhci_driver.event_ring);
-    console_write("Event ring has a valid TRB\r\n");
 
     // Dequeue the event.
     xhci_trb_t event_trb;
@@ -862,333 +843,25 @@ int xhci_address_device(uint8_t port_number, xhci_assigned_slot_t *out_assigned_
 
     console_write("Address device command completed successfully\r\n");
 
-    out_assigned_slot->slot_id = slot_id;
-    out_assigned_slot->port_number = port_number;
-    out_assigned_slot->input_context_base = input_context_base_page;
-    out_assigned_slot->input_context = (xhci_input_context_t *)input_context_base;
+    out_device->slot_id = slot_id;
+    out_device->port_number = port_number;
+    out_device->input_context_base = input_context_base_page;
+    out_device->input_context = (xhci_input_context_t *)input_context_base;
 
     // Initialize the EP0 transfer ring.
-    return xhci_transfer_ring_init(&out_assigned_slot->ep0_transfer_ring, &transfer_ring_base_page, 256);
+    return xhci_transfer_ring_init(&out_device->ep0_transfer_ring, &transfer_ring_base_page, 256);
 }
 
-int xhci_ep0_transfer_ring_enqueue(xhci_assigned_slot_t *assigned_slot, xhci_trb_t *trb) {
-    return xhci_transfer_ring_enqueue(&assigned_slot->ep0_transfer_ring, trb);
+int xhci_ep0_transfer_ring_enqueue(xhci_device_t *device, xhci_trb_t *trb) {
+    return xhci_transfer_ring_enqueue(&device->ep0_transfer_ring, trb);
 }
 
-void xhci_ep0_ring_doorbell(xhci_assigned_slot_t *assigned_slot) {
-    xhci_ring_doorbell(assigned_slot->slot_id, 0x1); // 0x1 = EP0 Enqueue Pointer Update
+void xhci_ep0_ring_doorbell(xhci_device_t *device) {
+    xhci_ring_doorbell(device->slot_id, 0x1); // 0x1 = EP0 Enqueue Pointer Update
 }
 
-void xhci_endpoint_ring_doorbell(xhci_assigned_slot_t *assigned_slot, xhci_endpoint_t *endpoint) {
-    xhci_ring_doorbell(assigned_slot->slot_id, endpoint->endpoint_context_idx);
-}
-
-int xhci_get_device_descriptor(xhci_assigned_slot_t *assigned_slot, usb_device_descriptor_t *out_device_descriptor) {
-    if (out_device_descriptor == NULL) {
-        console_write("Output device descriptor is NULL\r\n");
-        return -1;
-    }
-
-    xhci_trb_t setup_packet_trb = {
-        // bmRequestType = 0x80 (Dir = Device to Host, Type = Standard, Recipient = Device)
-        // bRequest = GET_DESCRIPTOR (0x6)
-        // wValue = Device Descriptor (0x1)
-        .parameter_low = 0x80 | (0x6 << 8) | (0x1 << 24),
-        // wIndex = 0 (no index)
-        // wLength = 0x12 (18 bytes)
-        .parameter_high = (0x12 << 16),
-        .status = 0x8, // TRB Size = 0x8 (8 bytes, ALWAYS), Interrupter Target = 0x0
-        .control = (1 << 6) | (0x3 << 16) | XHCI_TRB_TYPE_SETUP_STAGE // IDT (Immediate data transfer), Transfer Type = IN Data Stage (0x3), SETUP_STAGE (0x2)
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &setup_packet_trb);
-
-    // Allocate a data stage buffer.
-    xhci_allocated_page_t data_stage_buffer;
-    if (xhci_alloc_page(&data_stage_buffer) < 0) {
-        console_write("Failed to allocate data stage buffer\r\n");
-        return -1;
-    }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
-
-    // Enqueue data stage TRB.
-    xhci_trb_t data_stage_trb = {
-        .parameter_low = (uint32_t)data_stage_buffer.physical_address,
-        .parameter_high = (uint32_t)(data_stage_buffer.physical_address >> 32),
-        .status = 0x12, // Transfer Size = 0x12 (18 bytes)
-        .control = (1 << 16) | XHCI_TRB_TYPE_DATA_STAGE, // DIR = 1, IDT = 0, IOC = 0, CH = 0
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &data_stage_trb);
-
-    // Enqueue status stage TRB.
-    xhci_trb_t status_stage_trb = {
-        .parameter_low = 0,
-        .parameter_high = 0,
-        .status = 0x0,
-        .control = (1 << 5) | XHCI_TRB_TYPE_STATUS_STAGE, // IOC = 1, 
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &status_stage_trb);
-
-    // Ring the transfer ring doorbell.
-    xhci_ep0_ring_doorbell(assigned_slot);
-
-    xhci_event_ring_wait_for_event(&g_xhci_driver.event_ring);
-
-    // Dequeue the event.
-    xhci_trb_t event_trb;
-    xhci_event_ring_dequeue(&g_xhci_driver.event_ring, &event_trb);
-    
-    if (!xhci_trb_is_type(&event_trb, XHCI_TRB_TYPE_TRANSFER_EVENT)) {
-        console_write("Event TRB is not a transfer event\r\n");
-        return -1;
-    }
-
-    if (!xhci_command_is_successful(&event_trb)) {
-        return -1;
-    }
-
-    console_write("GET_DESCRIPTOR (device) completed successfully\r\n");
-
-    // Copy the device descriptor to the output buffer.
-    *out_device_descriptor = *(usb_device_descriptor_t *)data_stage_buffer.virtual_address;
-
-    // Free the data stage buffer.
-    xhci_free_page(&data_stage_buffer);
-    return 0;
-}
-
-int xhci_get_configuration_descriptor(
-    xhci_assigned_slot_t *assigned_slot,
-    usb_configuration_descriptor_t *out_configuration_descriptor
-) {
-    if (out_configuration_descriptor == NULL) {
-        console_write("Output configuration descriptor is NULL\r\n");
-        return -1;
-    }
-
-    // Allocate a data stage buffer.
-    xhci_allocated_page_t data_stage_buffer;
-    if (xhci_alloc_page(&data_stage_buffer) < 0) {
-        console_write("Failed to allocate data stage buffer\r\n");
-        return -1;
-    }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
-
-    // Get the configuration descriptor.
-    xhci_trb_t setup_packet_trb = {
-        // bmRequestType = 0x80 (Dir = Device to Host, Type = Standard, Recipient = Device)
-        // bRequest = GET_DESCRIPTOR (0x6)
-        // wValue = Configuration Descriptor (0x2)
-        .parameter_low = 0x80 | (0x6 << 8) | (0x2 << 24),
-        // wIndex = 0 (no index)
-        // wLength = 0x9 (8 bytes)
-        .parameter_high = (sizeof(usb_configuration_descriptor_t) << 16),
-        .status = 0x8,
-        .control = (1 << 6) | (0x3 << 16) | XHCI_TRB_TYPE_SETUP_STAGE,
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &setup_packet_trb);
-
-    xhci_trb_t data_stage_trb = {
-        .parameter_low = (uint32_t)data_stage_buffer.physical_address,
-        .parameter_high = (uint32_t)(data_stage_buffer.physical_address >> 32),
-        .status = sizeof(usb_configuration_descriptor_t), // Transfer Size = size of the configuration descriptor
-        .control = (1 << 16) | XHCI_TRB_TYPE_DATA_STAGE, // DIR = 1, IDT = 0, IOC = 0, CH = 0
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &data_stage_trb);
-
-    xhci_trb_t status_stage_trb = {
-        .parameter_low = 0,
-        .parameter_high = 0,
-        .status = 0x0,
-        .control = (1 << 5) | XHCI_TRB_TYPE_STATUS_STAGE, // IOC = 1, 
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &status_stage_trb);
-
-    // Ring the transfer ring doorbell.
-    xhci_ep0_ring_doorbell(assigned_slot);
-
-    xhci_event_ring_wait_for_event(&g_xhci_driver.event_ring);
-
-    // Dequeue the event.
-    xhci_trb_t event_trb;
-    xhci_event_ring_dequeue(&g_xhci_driver.event_ring, &event_trb);
-
-    if (!xhci_trb_is_type(&event_trb, XHCI_TRB_TYPE_TRANSFER_EVENT)) {
-        console_write("Event TRB is not a transfer event\r\n");
-        return -1;
-    }
-
-    if (!xhci_command_is_successful(&event_trb)) {
-        return -1;
-    }
-
-    console_write("GET_DESCRIPTOR (configuration) completed successfully\r\n");
-
-    // Copy the configuration descriptor to the output buffer.
-    *out_configuration_descriptor = *(usb_configuration_descriptor_t *)data_stage_buffer.virtual_address;
-
-    // Free the data stage buffer.
-    xhci_free_page(&data_stage_buffer);
-    return 0;
-}
-
-int xhci_get_all_configuration_descriptors(
-    xhci_assigned_slot_t *assigned_slot,
-    usb_configuration_descriptor_t *in_configuration_descriptor,
-    usb_descriptor_header_t **out_descriptors
-) {
-    if (in_configuration_descriptor == NULL) {
-        console_write("Input configuration descriptor is NULL\r\n");
-        return -1;
-    }
-
-    if (out_descriptors == NULL) {
-        console_write("Output descriptors is NULL\r\n");
-        return -1;
-    }
-
-    // Allocate a data stage buffer.
-    xhci_allocated_page_t data_stage_buffer;
-    if (xhci_alloc_page(&data_stage_buffer) < 0) {
-        console_write("Failed to allocate data stage buffer\r\n");
-        return -1;
-    }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
-
-    xhci_trb_t setup_packet_trb = {
-        // bmRequestType = 0x80 (Dir = Device to Host, Type = Standard, Recipient = Device)
-        // bRequest = GET_DESCRIPTOR (0x6)
-        // wValue = Configuration Descriptor (0x2)
-        .parameter_low = 0x80 | (0x6 << 8) | (0x2 << 24),
-        // wIndex = 0 (no index)
-        // wLength = wTotalLength
-        .parameter_high = (in_configuration_descriptor->wTotalLength << 16),
-        .status = 0x8,
-        .control = (1 << 6) | (0x3 << 16) | XHCI_TRB_TYPE_SETUP_STAGE,
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &setup_packet_trb);
-
-    xhci_trb_t data_stage_trb = {
-        .parameter_low = (uint32_t)data_stage_buffer.physical_address,
-        .parameter_high = (uint32_t)(data_stage_buffer.physical_address >> 32),
-        .status = in_configuration_descriptor->wTotalLength, // Transfer Size = wTotalLength
-        .control = (1 << 16) | XHCI_TRB_TYPE_DATA_STAGE, // DIR = 1, IDT = 0, IOC = 0, CH = 0
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &data_stage_trb);
-
-    xhci_trb_t status_stage_trb = {
-        .parameter_low = 0,
-        .parameter_high = 0,
-        .status = 0x0,
-        .control = (1 << 5) | XHCI_TRB_TYPE_STATUS_STAGE, // IOC = 1, 
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &status_stage_trb);
-
-    // Ring the transfer ring doorbell.
-    xhci_ep0_ring_doorbell(assigned_slot);
-
-    xhci_event_ring_wait_for_event(&g_xhci_driver.event_ring);
-    console_write("Event ring has a valid TRB\r\n");
-
-    xhci_trb_t event_trb;
-    xhci_event_ring_dequeue(&g_xhci_driver.event_ring, &event_trb);
-
-    if (!xhci_trb_is_type(&event_trb, XHCI_TRB_TYPE_TRANSFER_EVENT)) {
-        console_write("Event TRB is not a transfer event\r\n");
-        return -1;
-    }
-
-    if (!xhci_command_is_successful(&event_trb)) {
-        return -1;
-    }
-
-    console_write("Configuration descriptors transfer completed successfully\r\n");
-
-    *out_descriptors = (usb_descriptor_header_t *)data_stage_buffer.virtual_address;
-    return 0;
-}
-
-int xhci_find_descriptor_by_type(
-    xhci_assigned_slot_t *assigned_slot,
-    uint8_t descriptor_type,
-    usb_configuration_descriptor_t *in_configuration_descriptor,
-    usb_descriptor_header_t *in_descriptors,
-    usb_descriptor_header_t **out_descriptor
-) {
-    if (in_configuration_descriptor == NULL) {
-        console_write("Input configuration descriptor is NULL\r\n");
-        return -1;
-    }
-
-    if (in_descriptors == NULL) {
-        console_write("Input descriptors is NULL\r\n");
-        return -1;
-    }
-
-    if (out_descriptor == NULL) {
-        console_write("Output descriptor is NULL\r\n");
-        return -1;
-    }
-
-    // Iterate through the descriptors.
-    usb_descriptor_header_t *descriptor = in_descriptors;
-    while ((uint64_t)descriptor < (uint64_t)in_descriptors + in_configuration_descriptor->wTotalLength) {
-        if (descriptor->bDescriptorType == descriptor_type) {
-            *out_descriptor = (usb_descriptor_header_t *)descriptor;
-            return 0;
-        }
-        descriptor = (usb_descriptor_header_t *)((uint64_t)descriptor + descriptor->bLength);
-    }
-
-    return -1;
-}
-
-int xhci_set_configuration(
-    xhci_assigned_slot_t *assigned_slot,
-    uint8_t configuration_value
-) {
-    if (assigned_slot == NULL) {
-        console_write("Input assigned slot is NULL\r\n");
-        return -1;
-    }
-
-    xhci_trb_t setup_packet_trb = {
-        // bmRequestType = 0x0
-        // bRequest = SET_CONFIGURATION (0x9)
-        // wValue = Configuration Value (bConfigurationValue)
-        .parameter_low = (0x9 << 8) | (configuration_value << 16),
-        // wIndex = 0 (no index)
-        // wLength = 0
-        .parameter_high = 0,
-        .status = 0x8,
-        .control = (1 << 6) | XHCI_TRB_TYPE_SETUP_STAGE,
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &setup_packet_trb);
-
-    xhci_trb_t status_stage_trb = {
-        .parameter_low = 0,
-        .parameter_high = 0,
-        .status = 0x0,
-        .control = (1 << 5) | XHCI_TRB_TYPE_STATUS_STAGE, // IOC = 1, 
-    };
-    xhci_ep0_transfer_ring_enqueue(assigned_slot, &status_stage_trb);
-
-    xhci_ep0_ring_doorbell(assigned_slot);
-    xhci_event_ring_wait_for_event(&g_xhci_driver.event_ring);
-
-    xhci_trb_t event_trb;
-    xhci_event_ring_dequeue(&g_xhci_driver.event_ring, &event_trb);
-
-    if (!xhci_trb_is_type(&event_trb, XHCI_TRB_TYPE_TRANSFER_EVENT)) {
-        console_write("Event TRB is not a transfer event\r\n");
-        return -1;
-    }
-
-    if (!xhci_command_is_successful(&event_trb)) {
-        return -1;
-    }
-
-    console_write("SET CONFIGURATION command completed successfully\r\n");
-    return 0;
+void xhci_endpoint_ring_doorbell(xhci_device_t *device, xhci_endpoint_t *endpoint) {
+    xhci_ring_doorbell(device->slot_id, endpoint->endpoint_context_idx);
 }
 
 static inline void dcache_clean_invalidate_range(uint64_t va, uint64_t size) {
@@ -1232,11 +905,11 @@ int xhci_allocate_heap(void) {
 }
 
 int xhci_configure_endpoint(
-    xhci_assigned_slot_t *assigned_slot,
+    xhci_device_t *device,
     usb_endpoint_descriptor_t *endpoint_descriptor,
     xhci_endpoint_t *endpoint
 ) {
-    if (assigned_slot == NULL) {
+    if (device == NULL) {
         console_write("Input assigned slot is NULL\r\n");
         return -1;
     }
@@ -1312,7 +985,7 @@ int xhci_configure_endpoint(
         input_context_base.virtual_address +
         sizeof(xhci_input_context_t)
     );
-    slot_context->root_hub_port_number = assigned_slot->port_number;
+    slot_context->root_hub_port_number = device->port_number;
     SLOT_CONTEXT_SET_CONTEXT_ENTRIES(slot_context, endpoint->endpoint_context_idx);
 
     // Create the endpoint transfer ring.
@@ -1339,7 +1012,7 @@ int xhci_configure_endpoint(
         .parameter_low = (uint32_t)input_context_base.physical_address,
         .parameter_high = (uint32_t)(input_context_base.physical_address >> 32),
         .status = 0,
-        .control = XHCI_TRB_TYPE_CONFIGURE_ENDPOINT_COMMAND | (assigned_slot->slot_id << 24)
+        .control = XHCI_TRB_TYPE_CONFIGURE_ENDPOINT_COMMAND | (device->slot_id << 24)
     };
     xhci_command_ring_enqueue(&configure_endpoint_trb);
 
@@ -1358,13 +1031,39 @@ int xhci_configure_endpoint(
     if (!xhci_command_is_successful(&event_trb)) {
         return -1;
     }
-    console_write("Configure endpoint command completed successfully\r\n");    
+    console_write("Configure endpoint command completed successfully\r\n");
+
+    xhci_device_state_t *device_state = &g_xhci_driver.devices[device->slot_id];
+    device_state->num_configured_endpoints++;
 
     xhci_free_page(&input_context_base);
     return 0;
 }
 
+int xhci_get_port_status(uint8_t port_number, xhci_port_status_t *port_status) {
+    if (port_status == NULL) {
+        console_write("Input port status is NULL\r\n");
+        return -1;
+    }
+
+    if (port_number >= xhci_get_max_ports()) {
+        console_write("Invalid port number\r\n");
+        return -1;
+    }
+
+    uint32_t port_sc = xhci_read_port_register(port_number, XHCI_PORT_PORTSC);
+
+    port_status->port_number = port_number;
+    port_status->current_connect_status = XHCI_PORTSC_CONNECT_STATUS(port_sc);
+    port_status->port_enabled = XHCI_PORTSC_PORT_ENABLED(port_sc);
+    
+    return 0;
+}
+
 int xhci_init(void) {
+    // Zero out the device state array.
+    memory_set(g_xhci_driver.devices, 0, sizeof(g_xhci_driver.devices));
+
     if (xhci_allocate_heap() < 0) {
         return -1;
     }
@@ -1439,256 +1138,175 @@ int xhci_init(void) {
 
     console_write("No-op command completed successfully\r\n");
 
-    uint8_t max_ports = xhci_get_max_ports();
-    console_write("Max ports: ");
-    console_write_hex(max_ports);
-    console_write("\r\n");
-    for (uint8_t port = 0; port < max_ports; port++) {
-        uint32_t port_sc = xhci_read_port_register(port, XHCI_PORT_PORTSC);
-        console_write("Port ");
-        console_write_hex(port);
-        console_write(" SC: ");
-        console_write_hex(port_sc);
-        console_write("\r\n");
+    return 0;
+}
+
+int xhci_poll_events(void) {
+    while (xhci_event_ring_has_valid_trb(&g_xhci_driver.event_ring)) {
+        xhci_trb_t event_trb;
+        xhci_event_ring_dequeue(&g_xhci_driver.event_ring, &event_trb);
+
+        uint8_t slot_id = XHCI_EVENT_TRB_SLOT_ID(&event_trb);
+        uint8_t endpoint_id = XHCI_EVENT_TRB_ENDPOINT_ID(&event_trb);
+
+        if (endpoint_id == 0) {
+            console_write("Invalid Endpoint ID received for event\r\n");
+            continue;
+        }
+
+        xhci_device_state_t *device_state = &g_xhci_driver.devices[slot_id];
+        xhci_endpoint_state_t *endpoint_state = &device_state->endpoints[endpoint_id - 1];
+
+        if (device_state->enabled == 0) {
+            console_write("Device is not enabled for the events slot\r\n");
+            continue;
+        }
+
+        if (ring_buffer_is_empty(&endpoint_state->transfer_jobs)) {
+            console_write("No transfer jobs for endpoint event\r\n");
+            continue;
+        }
+
+        xhci_transfer_job_t transfer_job;
+        ring_buffer_dequeue(&endpoint_state->transfer_jobs, &transfer_job, sizeof(xhci_transfer_job_t));
+
+        uint8_t completion_code = XHCI_EVENT_TRB_COMPLETION_CODE(&event_trb);
+        if (completion_code != XHCI_COMPLETION_CODE_SUCCESS) {
+            console_write("Transfer failed with completion code: ");
+            console_write_hex(completion_code);
+            console_write("\r\n");
+
+            if (transfer_job.has_data) {
+                xhci_free_page(&transfer_job.data_buffer);
+            }
+
+            if (transfer_job.callback) {
+                transfer_job.callback(XHCI_COMPLETION_CODE_FAILED, NULL, 0, transfer_job.callback_context);
+            }
+            continue;
+        }
+
+        if (transfer_job.has_data) {
+            // Call the callback with the data.
+            uint8_t *data = (uint8_t *)transfer_job.data_buffer.virtual_address;
+            transfer_job.callback(XHCI_COMPLETION_CODE_SUCCESS, data, transfer_job.transfer_length, transfer_job.callback_context);
+
+            // Free the data buffer.
+            xhci_free_page(&transfer_job.data_buffer);
+        } else {
+            transfer_job.callback(XHCI_COMPLETION_CODE_SUCCESS, NULL, 0, transfer_job.callback_context);
+        }
     }
 
-    // TODO: Remove hardcoded port number, determine the port number of the device from connection states.
-    xhci_assigned_slot_t assigned_slot;
-    if (xhci_address_device(0x6, &assigned_slot) < 0) {
-        return -1;
+    return 0;
+}
+
+int xhci_control_transfer(xhci_device_t *device, xhci_control_transfer_request_t *request) {
+    xhci_transfer_job_t transfer_job;
+    memory_set(&transfer_job, 0, sizeof(xhci_transfer_job_t));
+
+    xhci_trb_t setup_packet_trb = {
+        .parameter_low = (
+            request->setup_packet->bmRequestType |
+            (request->setup_packet->bRequest << 8) |
+            (request->setup_packet->wValue << 16)
+        ),
+        .parameter_high = request->setup_packet->wIndex | (request->setup_packet->wLength << 16),
+        .status = 0x8, // TRB Size = 0x8 (8 bytes, ALWAYS), Interrupter Target = 0x0
+        .control = XHCI_TRB_TYPE_SETUP_STAGE
+    };
+
+    if (request->immediate_data_transfer) {
+        setup_packet_trb.control |= XHCI_TRB_CONTROL_IDT;
     }
 
-    uint8_t slot_id = assigned_slot.slot_id;
-
-    usb_device_descriptor_t device_descriptor;
-    if (xhci_get_device_descriptor(&assigned_slot, &device_descriptor) < 0) {
-        return -1;
+    switch (request->transfer_type) {
+        case NO_DATA:
+            setup_packet_trb.control |= XHCI_TRB_CONTROL_TRT_NO_DATA;
+            break;
+        case IN_DATA:
+            setup_packet_trb.control |= XHCI_TRB_CONTROL_TRT_DATA_IN;
+            break;
+        case OUT_DATA:
+            setup_packet_trb.control |= XHCI_TRB_CONTROL_TRT_DATA_OUT;
+            break;
+        default:
+            console_write("Invalid tranfer type");
+            return -1;
     }
 
-    console_write("Device Descriptor: \r\n");
-    console_write("bLength: ");
-    console_write_hex(device_descriptor.bLength);
-    console_write("\r\n");
-    console_write("bDescriptorType: ");
-    console_write_hex(device_descriptor.bDescriptorType);
-    console_write("\r\n");
-    console_write("bcdUSB: ");
-    console_write_hex(device_descriptor.bcdUSB);
-    console_write("\r\n");
-    console_write("bDeviceClass: ");
-    console_write_hex(device_descriptor.bDeviceClass);
-    console_write("\r\n");
-    console_write("bDeviceSubClass: ");
-    console_write_hex(device_descriptor.bDeviceSubClass);
-    console_write("\r\n");
-    console_write("bDeviceProtocol: ");
-    console_write_hex(device_descriptor.bDeviceProtocol);
-    console_write("\r\n");
-    console_write("bMaxPacketSize0: ");
-    console_write_hex(device_descriptor.bMaxPacketSize0);
-    console_write("\r\n");
-    console_write("idVendor: ");
-    console_write_hex(device_descriptor.idVendor);
-    console_write("\r\n");
-    console_write("idProduct: ");
-    console_write_hex(device_descriptor.idProduct);
-    console_write("\r\n");
-    console_write("bcdDevice: ");
-    console_write_hex(device_descriptor.bcdDevice);
-    console_write("\r\n");
-    console_write("iManufacturer: ");
-    console_write_hex(device_descriptor.iManufacturer);
-    console_write("\r\n");
-    console_write("iProduct: ");
-    console_write_hex(device_descriptor.iProduct);
-    console_write("\r\n");
-    console_write("iSerialNumber: ");
-    console_write_hex(device_descriptor.iSerialNumber);
-    console_write("\r\n");
-    console_write("bNumConfigurations: ");
-    console_write_hex(device_descriptor.bNumConfigurations);
-    console_write("\r\n");
+    xhci_ep0_transfer_ring_enqueue(device, &setup_packet_trb);
 
-    usb_configuration_descriptor_t configuration_descriptor;
-    if (xhci_get_configuration_descriptor(&assigned_slot, &configuration_descriptor) < 0) {
-        return -1;
-    }
+    if (request->transfer_type != NO_DATA) {
+        if (xhci_alloc_page(&transfer_job.data_buffer) < 0) {
+            // TODO: Error here leaves the transfer ring in an invalid state, need to clean up.
+            console_write("Failed to allocate data buffer for control transfer.");
+            return -1;
+        }
 
-    console_write("Configuration Descriptor: \r\n");
-    console_write("bLength: ");
-    console_write_hex(configuration_descriptor.bLength);
-    console_write("\r\n");
-    console_write("bDescriptorType: ");
-    console_write_hex(configuration_descriptor.bDescriptorType);
-    console_write("\r\n");
-    console_write("wTotalLength: ");
-    console_write_hex(configuration_descriptor.wTotalLength);
-    console_write("\r\n");
-    console_write("bNumInterfaces: ");
-    console_write_hex(configuration_descriptor.bNumInterfaces);
-    console_write("\r\n");
-    console_write("bConfigurationValue: ");
-    console_write_hex(configuration_descriptor.bConfigurationValue);
-    console_write("\r\n");
-    console_write("iConfiguration: ");
-    console_write_hex(configuration_descriptor.iConfiguration);
-    console_write("\r\n");
-    console_write("bmAttributes: ");
-    console_write_hex(configuration_descriptor.bmAttributes);
-    console_write("\r\n");
-    console_write("bMaxPower: ");
-    console_write_hex(configuration_descriptor.bMaxPower);
-    console_write("\r\n");
-
-    usb_descriptor_header_t *descriptors = NULL;
-    if (xhci_get_all_configuration_descriptors(&assigned_slot, &configuration_descriptor, &descriptors) < 0) {
-        console_write("Failed to get all configuration descriptors\r\n");
-        return -1;
-    }
-
-    usb_interface_descriptor_t *interface_descriptor = NULL;
-    usb_endpoint_descriptor_t *endpoint_descriptor = NULL;
-
-    if (xhci_find_descriptor_by_type(
-        &assigned_slot,
-        USB_DESCRIPTOR_TYPE_INTERFACE,
-        &configuration_descriptor,
-        descriptors,
-        (usb_descriptor_header_t **)&interface_descriptor
-    ) < 0) {
-        console_write("Failed to find interface descriptor\r\n");
-        return -1;
-    }
-
-    if (xhci_find_descriptor_by_type(
-        &assigned_slot,
-        USB_DESCRIPTOR_TYPE_ENDPOINT,
-        &configuration_descriptor,
-        descriptors,
-        (usb_descriptor_header_t **)&endpoint_descriptor
-    ) < 0) {
-        console_write("Failed to find endpoint descriptor\r\n");
-        return -1;
-    }
-
-    console_write("Interface Descriptor: \r\n");
-    console_write("bLength: ");
-    console_write_hex(interface_descriptor->bLength);
-    console_write("\r\n");
-    console_write("bDescriptorType: ");
-    console_write_hex(interface_descriptor->bDescriptorType);
-    console_write("\r\n");
-    console_write("bInterfaceNumber: ");
-    console_write_hex(interface_descriptor->bInterfaceNumber);
-    console_write("\r\n");
-    console_write("bAlternateSetting: ");
-    console_write_hex(interface_descriptor->bAlternateSetting);
-    console_write("\r\n");
-    console_write("bNumEndpoints: ");
-    console_write_hex(interface_descriptor->bNumEndpoints);
-    console_write("\r\n");
-    console_write("bInterfaceClass: ");
-    console_write_hex(interface_descriptor->bInterfaceClass);
-    console_write("\r\n");
-    console_write("bInterfaceSubClass: ");
-    console_write_hex(interface_descriptor->bInterfaceSubClass);
-    console_write("\r\n");
-    console_write("bInterfaceProtocol: ");
-    console_write_hex(interface_descriptor->bInterfaceProtocol);
-    console_write("\r\n");
-    console_write("iInterface: ");
-    console_write_hex(interface_descriptor->iInterface);
-    console_write("\r\n");
-
-    console_write("Endpoint Descriptor: \r\n");
-    console_write("bLength: ");
-    console_write_hex(endpoint_descriptor->bLength);
-    console_write("\r\n");
-    console_write("bDescriptorType: ");
-    console_write_hex(endpoint_descriptor->bDescriptorType);
-    console_write("\r\n");
-    console_write("bEndpointAddress: ");
-    console_write_hex(endpoint_descriptor->bEndpointAddress);
-    console_write("\r\n");
-    console_write("bmAttributes: ");
-    console_write_hex(endpoint_descriptor->bmAttributes);
-    console_write("\r\n");
-    console_write("wMaxPacketSize: ");
-    console_write_hex(endpoint_descriptor->wMaxPacketSize);
-    console_write("\r\n");
-    console_write("bInterval: ");
-    console_write_hex(endpoint_descriptor->bInterval);
-    console_write("\r\n");
-
-    // Send SET CONFIGURATION command.
-    if (xhci_set_configuration(&assigned_slot, configuration_descriptor.bConfigurationValue) < 0) {
-        console_write("Failed to set configuration\r\n");
-        return -1;
-    }
-
-    // Enable the endpoint.
-    xhci_endpoint_t endpoint;
-    if (xhci_configure_endpoint(&assigned_slot, endpoint_descriptor, &endpoint) < 0) {
-        console_write("Failed to configure endpoint\r\n");
-        return -1;
-    }
-
-    // Allocate a data stage buffer.
-    xhci_allocated_page_t data_stage_buffer;
-    if (xhci_alloc_page(&data_stage_buffer) < 0) {
-        console_write("Failed to allocate data stage buffer\r\n");
-        return -1;
-    }
-    memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
-
-    while (1) {
-        memory_set((void *)data_stage_buffer.virtual_address, 0, PAGE_SIZE);
-
-        // Enqueue a Normal TRB for the endpoint to fetch data from the device.
-        xhci_trb_t mouse_transfer_trb = {
-            .parameter_low = (uint32_t)data_stage_buffer.physical_address,
-            .parameter_high = (uint32_t)(data_stage_buffer.physical_address >> 32),
-            .status = 0x4, // Transfer Size = 0x4 (4 bytes)
-            .control = XHCI_TRB_TYPE_NORMAL | (1 << 5) | (1 << 2) // IOC = 1.
+        xhci_trb_t data_stage_trb = {
+            .parameter_low = (uint32_t)transfer_job.data_buffer.physical_address,
+            .parameter_high = (uint32_t)(transfer_job.data_buffer.physical_address >> 32),
+            .status = request->setup_packet->wLength, // Transfer Size = wLength
+            .control = XHCI_TRB_DATA_STAGE_IN_DIRECTION | XHCI_TRB_TYPE_DATA_STAGE,
         };
-        xhci_transfer_ring_enqueue(&endpoint.transfer_ring, &mouse_transfer_trb);
-        xhci_endpoint_ring_doorbell(&assigned_slot, &endpoint);
-
-        // Wait for an event to be available on the event ring.
-        xhci_event_ring_wait_for_event(event_ring);
-
-        xhci_event_ring_dequeue(event_ring, &event_trb);
-
-        if (!xhci_trb_is_type(&event_trb, XHCI_TRB_TYPE_TRANSFER_EVENT)) {
-            console_write("Event TRB is not a transfer event\r\n");
-            return -1;
-        }
-
-        if (!xhci_command_is_successful(&event_trb)) {
-            return -1;
-        }
-
-        typedef struct mouse_report_t {
-            uint8_t buttons;
-            int8_t x;
-            int8_t y;
-            int8_t wheel;
-        } mouse_report_t;
-
-        mouse_report_t *mouse_report = (mouse_report_t *)data_stage_buffer.virtual_address;
-        console_write("Buttons: ");
-        console_write_hex(mouse_report->buttons);
-        console_write("\r\n");
-        console_write("X: ");
-        console_write_hex(mouse_report->x);
-        console_write("\r\n");
-        console_write("Y: ");
-        console_write_hex(mouse_report->y);
-        console_write("\r\n");
-        console_write("Wheel: ");
-        console_write_hex(mouse_report->wheel);
-        console_write("\r\n");
+        xhci_ep0_transfer_ring_enqueue(device, &data_stage_trb);
+        transfer_job.has_data = 1;
     }
+
+    xhci_trb_t status_stage_trb = {
+        .parameter_low = 0,
+        .parameter_high = 0,
+        .status = 0x0,
+        .control = XHCI_TRB_CONTROL_IOC | XHCI_TRB_TYPE_STATUS_STAGE, 
+    };
+    xhci_ep0_transfer_ring_enqueue(device, &status_stage_trb);
+
+    transfer_job.callback = request->callback;
+    transfer_job.callback_context = request->callback_context;
+    transfer_job.transfer_length = request->setup_packet->wLength;
+
+    // Enqueue the transfer job so the poller can process it.
+    ring_buffer_t* transfer_jobs = &g_xhci_driver.devices[device->slot_id].endpoints[0].transfer_jobs;
+    ring_buffer_enqueue(transfer_jobs, &transfer_job, sizeof(xhci_transfer_job_t));
+
+    // Ring the doorbell to start the transfer.
+    xhci_ep0_ring_doorbell(device);
+
+    return 0;
+}
+
+int xhci_transfer(xhci_device_t *device, xhci_transfer_request_t *request) {
+    xhci_transfer_job_t transfer_job;
+
+    if (xhci_alloc_page(&transfer_job.data_buffer) < 0) {
+        console_write("Failed to allocate data buffer for transfer.");
+        return -1;
+    }
+
+    xhci_trb_t transfer_trb = {
+        .parameter_low = (uint32_t)transfer_job.data_buffer.physical_address,
+        .parameter_high = (uint32_t)(transfer_job.data_buffer.physical_address >> 32),
+        .status = request->transfer_length, // Transfer Size = transfer_length
+        .control = XHCI_TRB_TYPE_NORMAL | XHCI_TRB_CONTROL_IOC
+    };
+
+    if (request->interrupt_on_short_packet) {
+        transfer_trb.control |= XHCI_TRB_CONTROL_ISP;
+    }
+
+    xhci_transfer_ring_enqueue(&request->endpoint->transfer_ring, &transfer_trb);
+
+    xhci_device_state_t *device_state = &g_xhci_driver.devices[device->slot_id];
+    xhci_endpoint_state_t *endpoint_state = &device_state->endpoints[request->endpoint->endpoint_context_idx - 1];
+
+    transfer_job.callback = request->callback;
+    transfer_job.callback_context = request->callback_context;
+    transfer_job.transfer_length = request->transfer_length;
+    transfer_job.has_data = 1;
+    ring_buffer_enqueue(&endpoint_state->transfer_jobs, &transfer_job, sizeof(xhci_transfer_job_t));
+
+    xhci_endpoint_ring_doorbell(device, request->endpoint);
 
     return 0;
 }

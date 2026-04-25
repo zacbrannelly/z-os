@@ -3,6 +3,8 @@
 #include "drivers/acpi/acpi.h"
 #include "drivers/pci/pcie.h"
 #include "drivers/pci/xhci.h"
+#include "drivers/usb/usb_core.h"
+#include "drivers/usb/usb_hid_mouse.h"
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
 #include "string.h"
@@ -75,8 +77,51 @@ void kernel_main(boot_info_t *boot_info) {
         return;
     }
 
-    pcie_init(mcfg_entry);
-    xhci_init();
+    if (pcie_init(mcfg_entry) < 0) {
+        console_write("Failed to initialize PCIe\r\n");
+        return;
+    }
+    
+    if (xhci_init() < 0) {
+        console_write("Failed to initialize xHCI\r\n");
+        return;
+    }
+
+    if (usb_init() < 0) {
+        console_write("Failed to initialize USB\r\n");
+        return;
+    }
+
+    if (usb_hid_mouse_init() < 0) {
+        console_write("Failed to initialize USB HID mouse driver\r\n");
+        return;
+    }
+
+    if (usb_parse_interfaces() < 0) {
+        console_write("Failed to parse USB interfaces\r\n");
+        return;
+    }
+
+    while (1) {
+        xhci_poll_events();
+        usb_hid_mouse_poll();
+
+        usb_hid_mouse_report_t *report = usb_hid_mouse_get_report();
+        if (report != NULL) {
+            // Set the colour of the screen based on the report.
+            uint32_t color = 0x00000000;
+            if (report->buttons & 0x01) {
+                color |= 0x000000FF;
+            }
+            if (report->buttons & 0x02) {
+                color |= 0x0000FF00;
+            }
+            if (report->buttons & 0x04) {
+                color |= 0x00FF0000;
+            }
+            clear_screen(boot_info, color);
+        }
+    }
 
     while (1) {
         // Wait for a character to be received.
