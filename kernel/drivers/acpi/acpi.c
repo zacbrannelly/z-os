@@ -60,3 +60,12 @@ acpi_table_mcfg_entry_t *acpi_get_mcfg_entry(void) {
 
     return (acpi_table_mcfg_entry_t *)((uint64_t)mcfg + sizeof(acpi_table_mcfg_t));
 }
+
+acpi_table_spcr_t *acpi_get_spcr(void) {
+    acpi_table_header_t *table = acpi_get_table_by_signature("SPCR");
+    if (table == NULL) {
+        return NULL;
+    }
+
+    return (acpi_table_spcr_t *)table;
+}

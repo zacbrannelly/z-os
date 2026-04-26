@@ -22,19 +22,28 @@ static const uint64_t pl011_base_clock = 0x16e3600; // 24 MHz
 void kernel_main(boot_info_t *boot_info) {
     // Initialize the serial port.
     pl011_driver_t serial;
-    pl011_init(&serial, pl011_base_address, pl011_base_clock);
+    if (pl011_init(&serial, pl011_base_address, pl011_base_clock) < 0) {
+        console_write("Failed to initialize PL011 UART\r\n");
+        return;
+    }
 
     // Initialize the console.
     console_t console;
-    uart_console_init(&console, &serial);
+    if (uart_console_init(&console, &serial) < 0) {
+        console_write("Failed to initialize UART console\r\n");
+        return;
+    }
     console_set_active(&console);
 
     // Initialize virtual memory mapping system.
-    mmap_init(
+    if (mmap_init(
         (efi_memory_descriptor_t *)boot_info->memory_map,
         boot_info->memory_map_size,
         boot_info->memory_map_descriptor_size
-    );
+    ) < 0) {
+        console_write("Failed to initialize virtual memory mapping system\r\n");
+        return;
+    }
 
     // Get the memory map (contains what physical memory is usable and what is reserved).
     mmap_memory_descriptor_t *memory_map = NULL;
@@ -56,26 +65,16 @@ void kernel_main(boot_info_t *boot_info) {
     uint32_t framebuffer_width = gfx_get_framebuffer_width();
     uint32_t framebuffer_height = gfx_get_framebuffer_height();
 
-    console_write("Framebuffer width: ");
-    console_write_hex(framebuffer_width);
-    console_write("\r\n");
-    console_write("Framebuffer height: ");
-    console_write_hex(framebuffer_height);
-    console_write("\r\n");
-
     if (cursor_init(framebuffer_width, framebuffer_height) < 0) {
         console_write("Failed to initialize cursor\r\n");
         return;
     }
 
-    console_write("Testing format_hex: ");
-    char buffer[17];
-    console_write("0x");
-    format_hex(buffer, sizeof(buffer), 0x1234ef);
-    console_write(buffer);
-    console_write("\r\n");
+    if (acpi_init(boot_info->acpi_table) < 0) {
+        console_write("Failed to initialize ACPI\r\n");
+        return;
+    }
 
-    acpi_init(boot_info->acpi_table);
     acpi_table_mcfg_entry_t *mcfg_entry = acpi_get_mcfg_entry();
     if (mcfg_entry == 0) {
         console_write("Failed to get MCFG entry\r\n");

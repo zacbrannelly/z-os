@@ -18,6 +18,7 @@
 
 // Forward declarations.
 typedef struct xhci_device_t xhci_device_t;
+typedef struct usb_driver_t usb_driver_t;
 
 #pragma pack(push, 1)
 
@@ -101,6 +102,7 @@ typedef struct usb_interface_t {
     usb_interface_alternate_setting_t alternate_settings[USB_MAX_NUM_ALTERNATE_SETTINGS];
     uint8_t num_alternate_settings;
     uint8_t interface_number;
+    usb_driver_t *driver;
 } usb_interface_t;
 
 typedef struct usb_configuration_t {
@@ -162,13 +164,6 @@ int usb_get_all_configuration_descriptors(
     uint8_t configuration_index,
     usb_configuration_descriptor_t *in_configuration_descriptor,
     usb_descriptor_header_t **out_descriptors
-);
-
-int usb_find_descriptor_by_type(
-    uint8_t descriptor_type,
-    usb_configuration_descriptor_t *in_configuration_descriptor,
-    usb_descriptor_header_t *in_descriptors,
-    usb_descriptor_header_t **out_descriptor
 );
 
 int usb_set_configuration(xhci_device_t *device, uint8_t configuration_value);

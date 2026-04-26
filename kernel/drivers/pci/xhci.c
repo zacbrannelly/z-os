@@ -841,8 +841,6 @@ int xhci_address_device(uint8_t port_number, xhci_device_t *out_device) {
         return -1;
     }
 
-    console_write("Address device command completed successfully\r\n");
-
     out_device->slot_id = slot_id;
     out_device->port_number = port_number;
     out_device->input_context_base = input_context_base_page;
@@ -1031,8 +1029,6 @@ int xhci_configure_endpoint(
     if (!xhci_command_is_successful(&event_trb)) {
         return -1;
     }
-    console_write("Configure endpoint command completed successfully\r\n");
-
     xhci_device_state_t *device_state = &g_xhci_driver.devices[device->slot_id];
     device_state->num_configured_endpoints++;
 

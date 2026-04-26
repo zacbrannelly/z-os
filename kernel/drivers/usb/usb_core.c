@@ -83,9 +83,14 @@ int usb_parse_interfaces(void) {
             for (uint8_t k = 0; k < configuration->num_interfaces; k++) {
                 usb_interface_t *interface = &configuration->interfaces[k];
 
+                if (interface->driver != NULL) {
+                    continue;
+                }
+
                 for (uint8_t l = 0; l < g_usb_core_driver.num_drivers; l++) {
                     usb_driver_t *driver = &g_usb_core_driver.drivers[l];
                     if (driver->match(interface) == USB_DRIVER_MATCH_FOUND) {
+                        interface->driver = driver;
                         driver->probe(device, configuration, interface);
                     }
                 }
@@ -196,11 +201,6 @@ static int enumerate_configuration(usb_device_t *device, uint8_t configuration_i
 }
 
 int usb_enumerate_device(usb_device_t *device) {
-    console_write("Enumerating device\r\n");
-    console_write("Port: ");
-    console_write_hex(device->xhci_device.port_number);
-    console_write("\r\n");
-
     if (device == NULL) {
         console_write("Input device is NULL\r\n");
         return -1;
@@ -218,38 +218,6 @@ int usb_enumerate_device(usb_device_t *device) {
             console_write("Failed to enumerate configuration\r\n");
             return -1;
         }
-
-        // Print out the enumerated configuration.
-        for (uint8_t j = 0; j < device->configurations[i].num_interfaces; j++) {
-            console_write("Interface: ");
-            console_write_hex(device->configurations[i].interfaces[j].interface_number);
-            console_write("\r\n");
-
-            for (uint8_t k = 0; k < device->configurations[i].interfaces[j].num_alternate_settings; k++) {
-                console_write("Alternate setting: ");
-                console_write_hex(device->configurations[i].interfaces[j].alternate_settings[k].interface_descriptor.bAlternateSetting);
-                console_write("\r\n");
-
-                console_write("Interface class: ");
-                console_write_hex(device->configurations[i].interfaces[j].alternate_settings[k].interface_descriptor.bInterfaceClass);
-                console_write("\r\n");
-
-                console_write("Interface sub class: ");
-                console_write_hex(device->configurations[i].interfaces[j].alternate_settings[k].interface_descriptor.bInterfaceSubClass);
-                console_write("\r\n");
-
-                console_write("Interface protocol: ");
-                console_write_hex(device->configurations[i].interfaces[j].alternate_settings[k].interface_descriptor.bInterfaceProtocol);
-                console_write("\r\n");
-
-                for (uint8_t l = 0; l < device->configurations[i].interfaces[j].alternate_settings[k].num_endpoints; l++) {
-                    console_write("Endpoint: ");
-                    console_write_hex(device->configurations[i].interfaces[j].alternate_settings[k].endpoints[l].endpoint_descriptor.bEndpointAddress);
-                    console_write("\r\n");
-                }
-            }
-        }
-        console_write("\r\n");
     }
 
     return 0;
@@ -387,40 +355,6 @@ int usb_get_descriptor(xhci_device_t *device, uint8_t descriptor_type, uint8_t d
     }
 
     return 0;
-}
-
-int usb_find_descriptor_by_type(
-    uint8_t descriptor_type,
-    usb_configuration_descriptor_t *in_configuration_descriptor,
-    usb_descriptor_header_t *in_descriptors,
-    usb_descriptor_header_t **out_descriptor
-) {
-    if (in_configuration_descriptor == NULL) {
-        console_write("Input configuration descriptor is NULL\r\n");
-        return -1;
-    }
-
-    if (in_descriptors == NULL) {
-        console_write("Input descriptors is NULL\r\n");
-        return -1;
-    }
-
-    if (out_descriptor == NULL) {
-        console_write("Output descriptor is NULL\r\n");
-        return -1;
-    }
-
-    // Iterate through the descriptors.
-    usb_descriptor_header_t *descriptor = in_descriptors;
-    while ((uint64_t)descriptor < (uint64_t)in_descriptors + in_configuration_descriptor->wTotalLength) {
-        if (descriptor->bDescriptorType == descriptor_type) {
-            *out_descriptor = (usb_descriptor_header_t *)descriptor;
-            return 0;
-        }
-        descriptor = (usb_descriptor_header_t *)((uint64_t)descriptor + descriptor->bLength);
-    }
-
-    return -1;
 }
 
 int usb_configure_endpoint(usb_device_t *device, usb_endpoint_t *endpoint) {
