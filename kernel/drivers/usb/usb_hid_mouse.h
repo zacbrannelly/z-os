@@ -6,11 +6,15 @@
 #define USB_HID_MOUSE_INTERFACE_SUBCLASS 0x01
 #define USB_HID_MOUSE_INTERFACE_PROTOCOL 0x02
 
+#define USB_HID_MOUSE_BUTTON_LEFT  0x01
+#define USB_HID_MOUSE_BUTTON_RIGHT 0x02
+
 typedef struct usb_hid_mouse_report_t {
     uint8_t buttons;
     int8_t x;
     int8_t y;
     int8_t wheel;
+    uint8_t cycle_bit;
 } usb_hid_mouse_report_t;
 
 // Initializes the USB HID mouse driver.

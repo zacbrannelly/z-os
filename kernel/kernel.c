@@ -7,32 +7,19 @@
 #include "drivers/usb/usb_hid_mouse.h"
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
+#include "gfx/gfx.h"
+#include "ui/cursor.h"
 #include "string.h"
 #include "page_alloc.h"
 #include "mmap.h"
 
 #include <stddef.h>
 
-static const uint32_t clr_white = 0x00FFFFFF;
-
 // TODO: Get these from the bootloader.
 static const uint64_t pl011_base_address = 0x09000000;
 static const uint64_t pl011_base_clock = 0x16e3600; // 24 MHz
 
-uint32_t g_counter = 0x00ffffff;
-const char g_banner[] = "\x1b[31mHello, ANSI world!\x1b[0m\r\n";
-
-void clear_screen(boot_info_t *boot_info, uint32_t color) {
-    // Clear the screen
-    for (int i = 0; i < boot_info->framebuffer_size; i++) {
-        boot_info->framebuffer[i] = color;
-    }
-}
-
 void kernel_main(boot_info_t *boot_info) {
-    // Clear the screen
-    clear_screen(boot_info, clr_white);
-
     // Initialize the serial port.
     pl011_driver_t serial;
     pl011_init(&serial, pl011_base_address, pl011_base_clock);
@@ -60,8 +47,26 @@ void kernel_main(boot_info_t *boot_info) {
     // Initialize a physical memory page allocator.
     page_alloc_init(memory_map, memory_map_count);
 
-    // Print the banner.
-    console_write(g_banner);
+    // Initialize the graphics system.
+    if (gfx_init(boot_info) < 0) {
+        console_write("Failed to initialize graphics\r\n");
+        return;
+    }
+
+    uint32_t framebuffer_width = gfx_get_framebuffer_width();
+    uint32_t framebuffer_height = gfx_get_framebuffer_height();
+
+    console_write("Framebuffer width: ");
+    console_write_hex(framebuffer_width);
+    console_write("\r\n");
+    console_write("Framebuffer height: ");
+    console_write_hex(framebuffer_height);
+    console_write("\r\n");
+
+    if (cursor_init(framebuffer_width, framebuffer_height) < 0) {
+        console_write("Failed to initialize cursor\r\n");
+        return;
+    }
 
     console_write("Testing format_hex: ");
     char buffer[17];
@@ -103,24 +108,15 @@ void kernel_main(boot_info_t *boot_info) {
     }
 
     while (1) {
+        gfx_clear(GFX_COLOR_WHITE);
+
         xhci_poll_events();
         usb_hid_mouse_poll();
 
-        usb_hid_mouse_report_t *report = usb_hid_mouse_get_report();
-        if (report != NULL) {
-            // Set the colour of the screen based on the report.
-            uint32_t color = 0x00000000;
-            if (report->buttons & 0x01) {
-                color |= 0x000000FF;
-            }
-            if (report->buttons & 0x02) {
-                color |= 0x0000FF00;
-            }
-            if (report->buttons & 0x04) {
-                color |= 0x00FF0000;
-            }
-            clear_screen(boot_info, color);
-        }
+        cursor_update();
+        cursor_draw();
+
+        gfx_swap_buffers();
     }
 
     while (1) {

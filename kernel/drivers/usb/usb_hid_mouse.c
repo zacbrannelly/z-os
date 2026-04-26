@@ -10,6 +10,7 @@ static usb_endpoint_t *g_endpoint;
 static usb_device_t *g_device;
 static uint8_t g_latest_report_valid;
 static uint8_t g_request_in_flight = 0;
+static uint8_t g_request_cycle_bit = 0;
 
 int usb_hid_mouse_init(void) {
     g_latest_report_valid = 0;
@@ -47,8 +48,11 @@ static void usb_hid_mouse_transfer_callback(
         return;
     }
 
-    memory_copy(&g_latest_report, data, sizeof(g_latest_report));
+    memory_copy(&g_latest_report, data, sizeof(g_latest_report) - 1);
+    g_latest_report.cycle_bit = g_request_cycle_bit;
     g_latest_report_valid = 1;
+
+    g_request_cycle_bit = !g_request_cycle_bit;
 }
 
 int usb_hid_mouse_probe(usb_device_t *device, usb_configuration_t *configuration, usb_interface_t *interface) {

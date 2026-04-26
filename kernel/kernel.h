@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-typedef struct boot_info {
+typedef struct boot_info_t {
     // Framebuffer information.
     uint32_t *framebuffer;
     uint32_t framebuffer_size;
