@@ -13,6 +13,8 @@
 #include "string.h"
 #include "page_alloc.h"
 #include "mmap.h"
+#include "kmalloc.h"
+#include "memory.h"
 
 #include <stddef.h>
 
@@ -57,6 +59,12 @@ void kernel_main(boot_info_t *boot_info) {
     // Initialize a physical memory page allocator.
     if (page_alloc_init(memory_map, memory_map_count) < 0) {
         console_write("Failed to initialize physical memory page allocator\r\n");
+        return;
+    }
+    
+    // Initialize the kernel heap.
+    if (kernel_heap_init() < 0) {
+        console_write("Failed to initialize kernel heap\r\n");
         return;
     }
 

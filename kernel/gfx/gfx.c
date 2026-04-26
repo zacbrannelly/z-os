@@ -5,11 +5,7 @@
 #include "../kernel.h"
 #include "../memory.h"
 #include "../console.h"
-#include "../page_alloc.h"
-#include "../mmap.h"
-
-// TODO: This just needs to come from the kernel heap space via kmalloc once it is implemented.
-#define GFX_BACK_FRAMEBUFFER_VIRTUAL_BASE 0xffffffff90000000ULL
+#include "../kmalloc.h"
 
 typedef struct gfx_t {
     uint32_t *framebuffer;       // Pointer to the framebuffer.
@@ -17,7 +13,6 @@ typedef struct gfx_t {
     uint32_t framebuffer_width;  // Width of the framebuffer in pixels.
     uint32_t framebuffer_stride; // Stride of the framebuffer in bytes.
 
-    uint64_t back_framebuffer_physical_address; // Physical address of the back framebuffer.
     uint32_t *back_framebuffer;  // Pointer to the back framebuffer.
 } gfx_t;
 
@@ -34,22 +29,12 @@ int gfx_init(boot_info_t *boot_info) {
     g_gfx.framebuffer_width = boot_info->framebuffer_width;
     g_gfx.framebuffer_stride = boot_info->framebuffer_stride;
 
-    if (page_alloc_block(PAGE_ALLOC_ORDER_4MB, &g_gfx.back_framebuffer_physical_address) < 0) {
+    g_gfx.back_framebuffer = (uint32_t *)kmalloc(g_gfx.framebuffer_size * sizeof(uint32_t));
+    if (g_gfx.back_framebuffer == NULL) {
         console_write("Failed to allocate back framebuffer\r\n");
         return -1;
     }
-    
-    if (mmap_map_range_l2_block(
-        GFX_BACK_FRAMEBUFFER_VIRTUAL_BASE,
-        GFX_BACK_FRAMEBUFFER_VIRTUAL_BASE + g_gfx.framebuffer_size,
-        g_gfx.back_framebuffer_physical_address,
-        PAGE_FLAG_NX | PAGE_FLAG_EL0_EL1_RW | PAGE_FLAG_NORMAL_MEMORY_NC
-    ) < 0) {
-        console_write("Failed to map back framebuffer\r\n");
-        return -1;
-    }
-
-    g_gfx.back_framebuffer = (uint32_t *)GFX_BACK_FRAMEBUFFER_VIRTUAL_BASE;
+    memory_set(g_gfx.back_framebuffer, 0, g_gfx.framebuffer_size * sizeof(uint32_t));
 
     return 0;
 }
