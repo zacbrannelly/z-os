@@ -5,6 +5,7 @@
 #include "drivers/pci/xhci.h"
 #include "drivers/usb/usb_core.h"
 #include "drivers/usb/usb_hid_mouse.h"
+#include "drivers/usb/usb_hid_keyboard.h"
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
 #include "gfx/gfx.h"
@@ -104,6 +105,11 @@ void kernel_main(boot_info_t *boot_info) {
         return;
     }
 
+    if (usb_hid_keyboard_init() < 0) {
+        console_write("Failed to initialize USB HID keyboard driver\r\n");
+        return;
+    }
+
     if (usb_parse_interfaces() < 0) {
         console_write("Failed to parse USB interfaces\r\n");
         return;
@@ -114,6 +120,7 @@ void kernel_main(boot_info_t *boot_info) {
 
         xhci_poll_events();
         usb_hid_mouse_poll();
+        usb_hid_keyboard_poll();
 
         cursor_update();
         cursor_draw();
