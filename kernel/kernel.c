@@ -54,7 +54,10 @@ void kernel_main(boot_info_t *boot_info) {
     }
 
     // Initialize a physical memory page allocator.
-    page_alloc_init(memory_map, memory_map_count);
+    if (page_alloc_init(memory_map, memory_map_count) < 0) {
+        console_write("Failed to initialize physical memory page allocator\r\n");
+        return;
+    }
 
     // Initialize the graphics system.
     if (gfx_init(boot_info) < 0) {

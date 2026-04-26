@@ -144,6 +144,7 @@ int usb_register_driver(usb_driver_t *driver);
 // Iterate over all devices and their interfaces and bind drivers.
 int usb_parse_interfaces(void);
 
+// Fetch a descriptor from a device.
 int usb_get_descriptor(
     xhci_device_t *device,
     uint8_t descriptor_type,
@@ -151,13 +152,18 @@ int usb_get_descriptor(
     void *out_descriptor,
     uint64_t descriptor_length
 );
+
+// Fetch a device descriptor from a device.
 int usb_get_device_descriptor(xhci_device_t *device, usb_device_descriptor_t *out_device_descriptor);
+
+// Fetch a configuration descriptor from a device.
 int usb_get_configuration_descriptor(
     xhci_device_t *device,
     uint8_t configuration_index,
     usb_configuration_descriptor_t *out_configuration_descriptor
 );
 
+// Fetch all configuration descriptors from a device.
 // NOTE: Allocates a page for the data buffer. Must be freed by the caller.
 int usb_get_all_configuration_descriptors(
     xhci_device_t *device,
@@ -166,6 +172,8 @@ int usb_get_all_configuration_descriptors(
     usb_descriptor_header_t **out_descriptors
 );
 
+// Set a configuration on a device.
 int usb_set_configuration(xhci_device_t *device, uint8_t configuration_value);
 
+// Configure an endpoint on a device.
 int usb_configure_endpoint(usb_device_t *device, usb_endpoint_t *endpoint);
