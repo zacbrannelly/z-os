@@ -6,6 +6,15 @@ optimization_flag="${1:?missing optimization flag}"
 object_root="${2:?missing object output directory}"
 debug_flag="${3:-}"
 
+# Build the openlibm library (if the static library does not exist).
+if [ ! -f "${object_root}/openlibm_build/libopenlibm.a" ]; then
+  mkdir -p "${object_root}/openlibm_build"
+  pushd "${object_root}/openlibm_build"
+  cmake -DBUILD_SHARED_LIBS=OFF "/opt/edk2/MyLoader/3rdparty/openlibm"
+  cmake --build .
+  popd
+fi
+
 mkdir -p "${object_root}"
 
 mapfile -t kernel_sources < <(find MyLoader/kernel -name '*.c' | sort)
@@ -26,6 +35,8 @@ for source_path in "${kernel_sources[@]}"; do
   gcc \
     -c "${source_path}" \
     -o "${object_path}" \
+    -I MyLoader/3rdparty/openlibm/include \
+    -I MyLoader/3rdparty/openlibm/src \
     -ffreestanding \
     -fno-builtin \
     -fno-stack-protector \
@@ -40,4 +51,5 @@ done
 ld \
   -T MyLoader/kernel/linker.ld \
   -o Build/MyLoader/kernel.elf \
-  "${object_files[@]}"
+  "${object_files[@]}" \
+  "${object_root}/openlibm_build/libopenlibm.a"

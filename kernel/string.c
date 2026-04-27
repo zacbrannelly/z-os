@@ -28,3 +28,15 @@ int strncmp(const char *s1, const char *s2, uint64_t count) {
 
     return 0;
 }
+
+int strlen(const char *s) {
+    int length = 0;
+    while (1) {
+        if (*s == '\0') {
+            break;
+        }
+        length++;
+        s++;
+    }
+    return length;
+}

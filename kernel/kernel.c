@@ -9,6 +9,7 @@
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
 #include "gfx/gfx.h"
+#include "gfx/font.h"
 #include "ui/cursor.h"
 #include "string.h"
 #include "page_alloc.h"
@@ -124,11 +125,13 @@ void kernel_main(boot_info_t *boot_info) {
     }
 
     while (1) {
-        gfx_clear(GFX_COLOR_WHITE);
+        gfx_clear(GFX_COLOR_BLACK);
 
         xhci_poll_events();
         usb_hid_mouse_poll();
         usb_hid_keyboard_poll();
+
+        font_draw_text("Hello, World!\r\nHello, World!", 0, 16, GFX_COLOR_WHITE);
 
         cursor_update();
         cursor_draw();
