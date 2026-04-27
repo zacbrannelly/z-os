@@ -60,7 +60,24 @@ void gfx_fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint
     }
 }
 
-void gfx_draw_alpha_bitmap(
+static uint32_t gfx_blend_colors(uint32_t src_color, uint32_t dst_color, uint32_t alpha) {
+    uint32_t inv_alpha = 255 - alpha;
+    uint32_t src_red = (src_color >> 16) & 0xFF;
+    uint32_t src_green = (src_color >> 8) & 0xFF;
+    uint32_t src_blue = src_color & 0xFF;
+
+    uint32_t dst_red = (dst_color >> 16) & 0xFF;
+    uint32_t dst_green = (dst_color >> 8) & 0xFF;
+    uint32_t dst_blue = dst_color & 0xFF;
+
+    uint32_t red = (src_red * alpha + dst_red * inv_alpha) / 255;
+    uint32_t green = (src_green * alpha + dst_green * inv_alpha) / 255;
+    uint32_t blue = (src_blue * alpha + dst_blue * inv_alpha) / 255;
+
+    return (red << 16) | (green << 8) | blue;
+}
+
+void gfx_draw_alpha_bitmap_scaled(
     uint8_t *src_bitmap,
     uint32_t src_stride,
     uint32_t src_x,
@@ -69,40 +86,29 @@ void gfx_draw_alpha_bitmap(
     uint32_t src_height,
     uint32_t dst_x,
     uint32_t dst_y,
+    uint32_t dst_width,
+    uint32_t dst_height,
     uint32_t color
 ) {
     uint32_t framebuffer_width = gfx_get_framebuffer_width();
     uint32_t framebuffer_height = gfx_get_framebuffer_height();
 
-    for (uint32_t i = 0; i < src_height; i++) {
-        for (uint32_t j = 0; j < src_width; j++) {
-            int dst_x0 = dst_x + j;
-            int dst_y0 = dst_y + i;
+    for (uint32_t dy = 0; dy < dst_height; dy++) {
+        int src_y0 = src_y + (dy * src_height) / dst_height;
 
+        for (uint32_t dx = 0; dx < dst_width; dx++) {
+            int src_x0 = src_x + (dx * src_width) / dst_width;
+            uint8_t alpha = src_bitmap[src_x0 + src_y0 * src_stride];
+            if (alpha == 0) continue;
+
+            int dst_x0 = dst_x + dx;
+            int dst_y0 = dst_y + dy;
             if (dst_x0 < 0 || dst_y0 < 0 || dst_x0 >= framebuffer_width || dst_y0 >= framebuffer_height)
                 continue;
 
-            uint8_t pixel = src_bitmap[src_x + j + (src_y + i) * src_stride];
-            if (pixel == 0) continue;
-
-            uint32_t *pixel_ptr = &g_gfx.back_framebuffer[dst_x + j + (dst_y + i) * g_gfx.framebuffer_width];
+            uint32_t *pixel_ptr = &g_gfx.back_framebuffer[dst_x0 + dst_y0 * g_gfx.framebuffer_width];
             uint32_t existing_color = *pixel_ptr;
-
-            uint32_t inv_alpha = 255 - pixel;
-
-            uint32_t src_red = (color >> 16) & 0xFF;
-            uint32_t src_green = (color >> 8) & 0xFF;
-            uint32_t src_blue = color & 0xFF;
-
-            uint32_t dst_red = (existing_color >> 16) & 0xFF;
-            uint32_t dst_green = (existing_color >> 8) & 0xFF;
-            uint32_t dst_blue = existing_color & 0xFF;
-
-            uint32_t red = (src_red * pixel + dst_red * inv_alpha) / 255;
-            uint32_t green = (src_green * pixel + dst_green * inv_alpha) / 255;
-            uint32_t blue = (src_blue * pixel + dst_blue * inv_alpha) / 255;
-
-            *pixel_ptr = (red << 16) | (green << 8) | blue;
+            *pixel_ptr = gfx_blend_colors(color, existing_color, alpha);
         }
     }
 }

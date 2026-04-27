@@ -124,6 +124,8 @@ void kernel_main(boot_info_t *boot_info) {
         return;
     }
 
+    char buffer[17];
+
     while (1) {
         gfx_clear(GFX_COLOR_BLACK);
 
@@ -131,7 +133,14 @@ void kernel_main(boot_info_t *boot_info) {
         usb_hid_mouse_poll();
         usb_hid_keyboard_poll();
 
-        font_draw_text("Hello, World!\r\nHello, World!", 0, 16, GFX_COLOR_WHITE);
+        uint32_t mouse_x, mouse_y;
+        cursor_get_position(&mouse_x, &mouse_y);
+
+        format_hex(buffer, sizeof(buffer), mouse_x);
+        font_draw_text(buffer, 0, 18, GFX_COLOR_WHITE);
+
+        format_hex(buffer, sizeof(buffer), mouse_y);
+        font_draw_text(buffer, 0, 36, GFX_COLOR_WHITE);
 
         cursor_update();
         cursor_draw();

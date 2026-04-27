@@ -18,10 +18,12 @@
 #define ATLAS_NUM_CHARS 96
 #define ATLAS_FIRST_CHAR 32
 #define ATLAS_PADDING 1
+#define ATLAS_OVERSAMPLING_X 2
+#define ATLAS_OVERSAMPLING_Y 1
 
 #define DEFAULT_FONT_DATA  (uint8_t*)g_roboto_mono_ttf_data
 #define DEFAULT_FONT_INDEX 0
-#define DEFAULT_FONT_SIZE  16
+#define DEFAULT_FONT_SIZE  18
 
 typedef struct font_atlas_t {
     uint8_t *ttf_data;
@@ -51,6 +53,8 @@ static int load_font(font_atlas_t *font, uint8_t *ttf_data, float font_size, uin
         console_write("Failed to pack font\r\n");
         return -1;
     }
+
+    stbtt_PackSetOversampling(&pc, ATLAS_OVERSAMPLING_X, ATLAS_OVERSAMPLING_Y);
 
     if (!stbtt_PackFontRange(
         &pc,
@@ -109,8 +113,10 @@ int font_draw_text(const char *text, uint32_t x, uint32_t baseline, uint32_t col
 
         int dst_x0 = cursor_x + chardata->xoff;
         int dst_y0 = cursor_y + chardata->yoff;
+        int dst_width = chardata->xoff2 - chardata->xoff;
+        int dst_height = chardata->yoff2 - chardata->yoff;
 
-        gfx_draw_alpha_bitmap(
+        gfx_draw_alpha_bitmap_scaled(
             g_default_font.atlas,
             ATLAS_WIDTH,
             src_x0,
@@ -119,6 +125,8 @@ int font_draw_text(const char *text, uint32_t x, uint32_t baseline, uint32_t col
             src_height,
             dst_x0,
             dst_y0,
+            dst_width,
+            dst_height,
             color
         );
 
