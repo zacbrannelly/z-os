@@ -11,11 +11,13 @@
 #include "gfx/gfx.h"
 #include "gfx/font.h"
 #include "ui/cursor.h"
+#include "ui/text_input.h"
 #include "string.h"
 #include "page_alloc.h"
 #include "mmap.h"
 #include "kmalloc.h"
 #include "memory.h"
+#include "time.h"
 
 #include <stddef.h>
 
@@ -124,7 +126,11 @@ void kernel_main(boot_info_t *boot_info) {
         return;
     }
 
-    char buffer[17];
+    text_input_t text_input;
+    if (text_input_init(&text_input) < 0) {
+        console_write("Failed to initialize text input\r\n");
+        return;
+    }
 
     while (1) {
         gfx_clear(GFX_COLOR_BLACK);
@@ -132,19 +138,10 @@ void kernel_main(boot_info_t *boot_info) {
         xhci_poll_events();
         usb_hid_mouse_poll();
         usb_hid_keyboard_poll();
-
-        uint32_t mouse_x, mouse_y;
-        cursor_get_position(&mouse_x, &mouse_y);
-
-        format_hex(buffer, sizeof(buffer), mouse_x);
-        font_draw_text(buffer, 0, 18, GFX_COLOR_WHITE);
-
-        format_hex(buffer, sizeof(buffer), mouse_y);
-        font_draw_text(buffer, 0, 36, GFX_COLOR_WHITE);
-
         cursor_update();
-        cursor_draw();
 
+        text_input_draw(&text_input);
+        cursor_draw();
         gfx_swap_buffers();
     }
 

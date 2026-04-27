@@ -31,6 +31,13 @@ typedef struct font_atlas_t {
     stbtt_packedchar packed_chars[96];
     float font_size;
     uint32_t font_index;
+
+    stbtt_fontinfo info;
+    float scale;
+    float ascent;
+    float descent;
+    float line_gap;
+    float line_height;
 } font_atlas_t;
 
 static font_atlas_t g_default_font;
@@ -39,6 +46,28 @@ static int load_font(font_atlas_t *font, uint8_t *ttf_data, float font_size, uin
     font->ttf_data = ttf_data;
     font->font_size = font_size;
     font->font_index = font_index;
+
+
+    int font_offset = stbtt_GetFontOffsetForIndex(ttf_data, font->font_index);
+    if (!stbtt_InitFont(&font->info, ttf_data, font_offset)) {
+        console_write("Failed to initialize font\r\n");
+        return -1;
+    }
+
+    font->scale = stbtt_ScaleForPixelHeight(&font->info, font_size);
+
+    int ascent, descent, line_gap;
+    stbtt_GetFontVMetrics(
+        &font->info,
+        &ascent,
+        &descent,
+        &line_gap
+    );
+
+    font->ascent = ascent * font->scale;
+    font->descent = descent * font->scale;
+    font->line_gap = line_gap * font->scale;
+    font->line_height = (ascent - descent + line_gap) * font->scale;
 
     stbtt_pack_context pc;
     if (!stbtt_PackBegin(
@@ -88,6 +117,14 @@ int font_init(void) {
     return 0;
 }
 
+int font_get_line_height(void) {
+    return g_default_font.line_height;
+}
+
+int font_get_ascent(void) {
+    return g_default_font.ascent;
+}
+
 int font_draw_text(const char *text, uint32_t x, uint32_t baseline, uint32_t color) {
     uint32_t cursor_x = x;
     uint32_t cursor_y = baseline;
@@ -97,7 +134,7 @@ int font_draw_text(const char *text, uint32_t x, uint32_t baseline, uint32_t col
 
         if (codepoint == '\n') {
             cursor_x = x;
-            cursor_y += g_default_font.font_size;
+            cursor_y += g_default_font.line_height;
             continue;
         }
 

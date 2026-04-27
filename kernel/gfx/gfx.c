@@ -52,10 +52,17 @@ void gfx_clear(uint32_t color) {
     }
 }
 
-void gfx_fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t color) {
+void gfx_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t color) {
+    uint32_t framebuffer_height = gfx_get_framebuffer_height();
+
     for (uint32_t i = 0; i < height; i++) {
         for (uint32_t j = 0; j < width; j++) {
-            g_gfx.back_framebuffer[x + j + (y + i) * g_gfx.framebuffer_width] = color;
+            int32_t x0 = x + j;
+            int32_t y0 = y + i;
+            if (x0 < 0 || y0 < 0 || x0 >= g_gfx.framebuffer_width || y0 >= framebuffer_height)
+                continue;
+
+            g_gfx.back_framebuffer[x0 + y0 * g_gfx.framebuffer_width] = color;
         }
     }
 }
@@ -90,7 +97,6 @@ void gfx_draw_alpha_bitmap_scaled(
     uint32_t dst_height,
     uint32_t color
 ) {
-    uint32_t framebuffer_width = gfx_get_framebuffer_width();
     uint32_t framebuffer_height = gfx_get_framebuffer_height();
 
     for (uint32_t dy = 0; dy < dst_height; dy++) {
@@ -103,7 +109,7 @@ void gfx_draw_alpha_bitmap_scaled(
 
             int dst_x0 = dst_x + dx;
             int dst_y0 = dst_y + dy;
-            if (dst_x0 < 0 || dst_y0 < 0 || dst_x0 >= framebuffer_width || dst_y0 >= framebuffer_height)
+            if (dst_x0 < 0 || dst_y0 < 0 || dst_x0 >= g_gfx.framebuffer_width || dst_y0 >= framebuffer_height)
                 continue;
 
             uint32_t *pixel_ptr = &g_gfx.back_framebuffer[dst_x0 + dst_y0 * g_gfx.framebuffer_width];
