@@ -33,8 +33,6 @@ int text_input_init(text_input_t *text_input) {
     text_input->cursor_color = GFX_COLOR_WHITE;
     text_input->text_color = GFX_COLOR_WHITE;
 
-    text_input->cursor_position.x = 0;
-    text_input->cursor_position.y = 0;
     text_input->cursor_size.x = TEXT_INPUT_CHAR_WIDTH;
     text_input->cursor_size.y = font_get_line_height();
 
@@ -80,12 +78,6 @@ int text_input_add_char(text_input_t *text_input, char c) {
     // Make sure it is null terminated.
     text_input->text[text_input->length] = '\0';
 
-    // Advance the cursor
-    text_input->cursor_position.x += TEXT_INPUT_CHAR_WIDTH;
-    if (c == '\n') {
-        text_input_move_cursor_down(text_input);
-    }
-
     return 0;
 }
 
@@ -99,13 +91,6 @@ int text_input_remove_char(text_input_t *text_input) {
     if (text_input->cursor_index == text_input->length) {
         text_input->text[text_input->cursor_index - 1] = '\0';
         text_input->length--;
-
-        if (move_up) {
-            text_input_move_cursor_up(text_input);
-        } else {
-            text_input->cursor_position.x -= TEXT_INPUT_CHAR_WIDTH;
-        }
-
         text_input->cursor_index--;
         return 0;
     }
@@ -118,52 +103,15 @@ int text_input_remove_char(text_input_t *text_input) {
 
     // Make sure it is null terminated.
     text_input->text[text_input->length] = '\0';
-
-    if (move_up) {
-        text_input_move_cursor_up(text_input);
-    } else {
-        text_input->cursor_position.x -= TEXT_INPUT_CHAR_WIDTH;
-    }
-
     text_input->cursor_index--;
-    return 0;
-}
-
-int text_input_move_cursor_up(text_input_t *text_input) {
-    uint32_t num_chars = 0;
-    if (text_input->cursor_index >= 2) {
-        for (int i = text_input->cursor_index - 2; i >= 0; i--) {
-            if (text_input->text[i] == '\n') {
-                break;
-            }
-            num_chars++;
-        }
-    }
-
-    text_input->cursor_position.x = num_chars * TEXT_INPUT_CHAR_WIDTH;
-    text_input->cursor_position.y -= font_get_line_height();
 
     return 0;
-}
-
-int text_input_move_cursor_down(text_input_t *text_input) {
-    text_input->cursor_position.x = 0;
-    text_input->cursor_position.y += font_get_line_height();
 }
 
 int text_input_move_cursor(text_input_t *text_input, int32_t dx) {
     if (dx == 0) return 0;
     if ((int32_t)text_input->cursor_index + dx < 0) return 0;
     if ((int32_t)text_input->cursor_index + dx > text_input->length) return 0;
-
-    char c = text_input->text[text_input->cursor_index + (dx < 0 ? dx : 0)];
-    if (c == '\n' && dx > 0) {
-        text_input_move_cursor_down(text_input);
-    } else if (c == '\n' && dx < 0) {
-        text_input_move_cursor_up(text_input);
-    } else if (c != '\n') {
-        text_input->cursor_position.x += dx * TEXT_INPUT_CHAR_WIDTH;
-    }
 
     text_input->cursor_index += dx;
 
@@ -328,13 +276,34 @@ int text_input_draw(text_input_t *text_input) {
 
     // Draw blinking cursor.
     if (get_time_ms() % 1000 < 500) {
-        gfx_fill_rect(
-            text_input->cursor_position.x,
-            text_input->cursor_position.y,
-            text_input->cursor_size.x,
-            text_input->cursor_size.y,
-            text_input->cursor_color
-        );
+        if (text_input->cursor_index == 0) {
+            gfx_fill_rect(
+                text_input->position.x,
+                text_input->position.y,
+                text_input->cursor_size.x,
+                text_input->cursor_size.y,
+                text_input->cursor_color
+            );
+        } else {
+            int32_t cursor_x, cursor_y;
+            char c = text_input->text[text_input->cursor_index - 1];
+            int x_off = c == '\n' ? 0 : TEXT_INPUT_CHAR_WIDTH;
+            font_calculate_cursor_pos(
+                text_input->text,
+                text_input->cursor_index - 1,
+                text_input->position.x,
+                text_input->position.y + font_get_ascent(),
+                &cursor_x,
+                &cursor_y
+            );
+            gfx_fill_rect(
+                cursor_x + x_off,
+                cursor_y - font_get_ascent(),
+                text_input->cursor_size.x,
+                text_input->cursor_size.y,
+                text_input->cursor_color
+            );
+        }
     }
 
     return 0;

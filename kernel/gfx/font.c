@@ -125,9 +125,57 @@ int font_get_ascent(void) {
     return g_default_font.ascent;
 }
 
-int font_draw_text(const char *text, uint32_t x, uint32_t baseline, uint32_t color) {
+int font_get_descent(void) {
+    return g_default_font.descent;
+}
+
+int font_get_line_gap(void) {
+    return g_default_font.line_gap;
+}
+
+int font_calculate_cursor_pos(
+    const char *text,
+    uint32_t glyph_index,
+    int32_t x,
+    int32_t baseline,
+    int32_t *out_cursor_x,
+    int32_t *out_cursor_y
+) {
     uint32_t cursor_x = x;
     uint32_t cursor_y = baseline;
+
+    if (glyph_index > strlen(text)) {
+        console_write("font_get_glyph_position: Index out of bounds\r\n");
+        return -1;
+    }
+
+    for (uint32_t i = 0; i <= glyph_index; i++) {
+        int codepoint = text[i];
+
+        if (codepoint == '\n') {
+            cursor_x = x;
+            cursor_y += g_default_font.line_height;
+
+            *out_cursor_x = cursor_x;
+            *out_cursor_y = cursor_y;
+            continue;
+        }
+
+        if (codepoint < ATLAS_FIRST_CHAR || codepoint > ATLAS_FIRST_CHAR + ATLAS_NUM_CHARS) continue;
+
+        int glyph_index = codepoint - ATLAS_FIRST_CHAR;
+        const stbtt_packedchar *chardata = &g_default_font.packed_chars[glyph_index];
+
+        *out_cursor_x = cursor_x;
+        *out_cursor_y = cursor_y;
+        cursor_x += chardata->xadvance;
+    }
+    return 0;
+}
+
+int font_draw_text(const char *text, int32_t x, int32_t baseline, uint32_t color) {
+    int32_t cursor_x = x;
+    int32_t cursor_y = baseline;
 
     for (uint32_t i = 0; i < strlen(text); i++) {
         int codepoint = text[i];
