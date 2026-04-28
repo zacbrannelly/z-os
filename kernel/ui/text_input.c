@@ -14,6 +14,7 @@
 #include "../drivers/usb/usb_hid_keys.h"
 
 #define TEXT_INPUT_INITIAL_CAPACITY 128
+#define TEXT_INPUT_CHAR_WIDTH 8
 
 int text_input_init(text_input_t *text_input) {
     memory_set(text_input, 0, sizeof(text_input_t));
@@ -34,7 +35,7 @@ int text_input_init(text_input_t *text_input) {
 
     text_input->cursor_position.x = 0;
     text_input->cursor_position.y = 0;
-    text_input->cursor_size.x = 8;
+    text_input->cursor_size.x = TEXT_INPUT_CHAR_WIDTH;
     text_input->cursor_size.y = font_get_line_height();
 
     return 0;
@@ -80,7 +81,10 @@ int text_input_add_char(text_input_t *text_input, char c) {
     text_input->text[text_input->length] = '\0';
 
     // Advance the cursor
-    text_input->cursor_position.x += 8;
+    text_input->cursor_position.x += TEXT_INPUT_CHAR_WIDTH;
+    if (c == '\n') {
+        text_input_move_cursor_down(text_input);
+    }
 
     return 0;
 }
@@ -88,11 +92,21 @@ int text_input_add_char(text_input_t *text_input, char c) {
 int text_input_remove_char(text_input_t *text_input) {
     if (text_input->cursor_index == 0) return 0;
 
+    char c = text_input->text[text_input->cursor_index - 1];
+    uint8_t move_up = c == '\n';
+
     // If cursor is at the end, just remove the last character.
     if (text_input->cursor_index == text_input->length) {
         text_input->text[text_input->cursor_index - 1] = '\0';
+        text_input->length--;
+
+        if (move_up) {
+            text_input_move_cursor_up(text_input);
+        } else {
+            text_input->cursor_position.x -= TEXT_INPUT_CHAR_WIDTH;
+        }
+
         text_input->cursor_index--;
-        text_input->cursor_position.x -= 8;
         return 0;
     }
 
@@ -105,22 +119,53 @@ int text_input_remove_char(text_input_t *text_input) {
     // Make sure it is null terminated.
     text_input->text[text_input->length] = '\0';
 
-    // Retreat the cursor
+    if (move_up) {
+        text_input_move_cursor_up(text_input);
+    } else {
+        text_input->cursor_position.x -= TEXT_INPUT_CHAR_WIDTH;
+    }
+
     text_input->cursor_index--;
-    text_input->cursor_position.x -= 8;
+    return 0;
+}
+
+int text_input_move_cursor_up(text_input_t *text_input) {
+    uint32_t num_chars = 0;
+    if (text_input->cursor_index >= 2) {
+        for (int i = text_input->cursor_index - 2; i >= 0; i--) {
+            if (text_input->text[i] == '\n') {
+                break;
+            }
+            num_chars++;
+        }
+    }
+
+    text_input->cursor_position.x = num_chars * TEXT_INPUT_CHAR_WIDTH;
+    text_input->cursor_position.y -= font_get_line_height();
 
     return 0;
 }
 
+int text_input_move_cursor_down(text_input_t *text_input) {
+    text_input->cursor_position.x = 0;
+    text_input->cursor_position.y += font_get_line_height();
+}
+
 int text_input_move_cursor(text_input_t *text_input, int32_t dx) {
     if (dx == 0) return 0;
+    if ((int32_t)text_input->cursor_index + dx < 0) return 0;
+    if ((int32_t)text_input->cursor_index + dx > text_input->length) return 0;
 
-    int new_cursor_index = text_input->cursor_index + dx;
-    if (new_cursor_index < 0) new_cursor_index = 0;
-    if (new_cursor_index > text_input->length) new_cursor_index = text_input->length;
+    char c = text_input->text[text_input->cursor_index + (dx < 0 ? dx : 0)];
+    if (c == '\n' && dx > 0) {
+        text_input_move_cursor_down(text_input);
+    } else if (c == '\n' && dx < 0) {
+        text_input_move_cursor_up(text_input);
+    } else if (c != '\n') {
+        text_input->cursor_position.x += dx * TEXT_INPUT_CHAR_WIDTH;
+    }
 
-    text_input->cursor_index = new_cursor_index;
-    text_input->cursor_position.x = text_input->position.x + new_cursor_index * 8;
+    text_input->cursor_index += dx;
 
     return 0;
 }
@@ -263,8 +308,6 @@ static void text_input_update(text_input_t *text_input) {
 
         if (scancode == KEY_ENTER) {
             text_input_add_char(text_input, '\n');
-            text_input->cursor_position.x = 0;
-            text_input->cursor_position.y += font_get_line_height();
         }
     }
 }
