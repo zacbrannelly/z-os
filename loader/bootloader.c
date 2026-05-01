@@ -12,6 +12,10 @@
 #include "kernel_loader.h"
 #include "virtual_addr.h"
 
+#define KERNEL_STACK_VIRTUAL_BASE 0xffffffffff000000ULL
+#define KERNEL_STACK_REGION_SIZE (16 * 1024 * 1024)
+#define KERNEL_STACK_REGION_PAGES (KERNEL_STACK_REGION_SIZE / EFI_PAGE_SIZE)
+
 EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *simple_file_system_protocol;
 EFI_GRAPHICS_OUTPUT_PROTOCOL *graphics_output_protocol;
 
@@ -30,6 +34,13 @@ typedef struct boot_info {
   // ACPI table.
   void *acpi_table;
 } boot_info_t;
+
+// Handoff function to jump to the kernel.
+void __attribute__((noreturn)) handoff(
+  uint64_t kernel_stack_top,
+  uint64_t kernel_entry_point,
+  boot_info_t *boot_info
+);
 
 EFI_STATUS exit_boot_services(IN EFI_HANDLE image_handle, IN EFI_SYSTEM_TABLE *system_table, boot_info_t *boot_info) {
   UINTN memory_map_size = 0;
@@ -199,6 +210,36 @@ EFI_STATUS EFIAPI UefiMain (
     return EFI_ABORTED;
   }
 
+  // Allocate physical pages for the kernel stack.
+  EFI_PHYSICAL_ADDRESS kernel_stack_physical_address = 0;
+  status = system_table->BootServices->AllocatePages(
+    AllocateAnyPages,
+    EfiLoaderData,
+    KERNEL_STACK_REGION_PAGES,
+    &kernel_stack_physical_address
+  );
+  if (EFI_ERROR(status)) {
+    Print(L"Failed to allocate pages for kernel stack: %r\r\n", status);
+    return EFI_ABORTED;
+  }
+
+  // Map the kernel stack into VA space.
+  if (KERNEL_STACK_VIRTUAL_BASE % 16 != 0) {
+    Print(L"Failed to map kernel stack into virtual address space, since it is not aligned to 16 bytes\r\n");
+    return EFI_ABORTED;
+  }
+  if (virtual_addr_map(
+    system_table,
+    &table,
+    kernel_stack_physical_address,
+    KERNEL_STACK_VIRTUAL_BASE,
+    KERNEL_STACK_REGION_PAGES,
+    PAGE_FLAG_EL1_RW | PAGE_FLAG_PXN | PAGE_FLAG_UXN | PAGE_FLAG_INNER_SHARABLE | PAGE_FLAG_MAIR_ATTR(3ULL)
+  ) < 0) {
+    Print(L"Failed to map kernel stack into virtual address space: %r\r\n", status);
+    return EFI_ABORTED;
+  }
+
   // ============================================ Setup the boot info ============================================
 
   status = system_table->BootServices->LocateProtocol(
@@ -276,11 +317,6 @@ EFI_STATUS EFIAPI UefiMain (
     return -1;
   }
 
-  // TODO: Change the stack pointer to the top of the kernel stack (the end of the mapped stack space).
-
-  // Jump to the kernel's entry point.
-  void (*kernel_entry)(boot_info_t *) = (void (*)(boot_info_t *))kernel_elf_info.entry_point;
-  kernel_entry(boot_info_physical_address);
-
-  return EFI_SUCCESS;
+  uint64_t kernel_stack_top = KERNEL_STACK_VIRTUAL_BASE + KERNEL_STACK_REGION_SIZE;
+  handoff(kernel_stack_top, kernel_elf_info.entry_point, boot_info_physical_address);
 }

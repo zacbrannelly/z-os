@@ -12,6 +12,7 @@
   kernel_elf.c
   kernel_loader.c
   elf.c
+  handoff.S
 
 [Packages]
   MdePkg/MdePkg.dec
