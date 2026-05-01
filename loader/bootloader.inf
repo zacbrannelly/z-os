@@ -1,13 +1,13 @@
 [Defines]
   INF_VERSION                    = 0x0001001B
-  BASE_NAME                      = MyLoader
+  BASE_NAME                      = bootloader
   FILE_GUID                      = 12345678-1234-1234-1234-123456789ABC
   MODULE_TYPE                    = UEFI_APPLICATION
   VERSION_STRING                 = 1.0
   ENTRY_POINT                    = UefiMain
 
 [Sources]
-  MyLoader.c
+  bootloader.c
   virtual_addr.c
   kernel_elf.c
   kernel_loader.c

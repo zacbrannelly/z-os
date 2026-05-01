@@ -10,14 +10,14 @@ debug_flag="${3:-}"
 if [ ! -f "${object_root}/openlibm_build/libopenlibm.a" ]; then
   mkdir -p "${object_root}/openlibm_build"
   pushd "${object_root}/openlibm_build"
-  cmake -DBUILD_SHARED_LIBS=OFF "/opt/edk2/MyLoader/3rdparty/openlibm"
+  cmake -DBUILD_SHARED_LIBS=OFF "/opt/edk2/bootloader/3rdparty/openlibm"
   cmake --build .
   popd
 fi
 
 mkdir -p "${object_root}"
 
-mapfile -t kernel_sources < <(find MyLoader/kernel -name '*.c' | sort)
+mapfile -t kernel_sources < <(find bootloader/kernel -name '*.c' | sort)
 
 if [ "${#kernel_sources[@]}" -eq 0 ]; then
   echo "No kernel sources found" >&2
@@ -27,7 +27,7 @@ fi
 object_files=()
 
 for source_path in "${kernel_sources[@]}"; do
-  relative_path="${source_path#MyLoader/kernel/}"
+  relative_path="${source_path#bootloader/kernel/}"
   object_path="${object_root}/${relative_path%.c}.o"
 
   mkdir -p "$(dirname "${object_path}")"
@@ -35,8 +35,8 @@ for source_path in "${kernel_sources[@]}"; do
   gcc \
     -c "${source_path}" \
     -o "${object_path}" \
-    -I MyLoader/3rdparty/openlibm/include \
-    -I MyLoader/3rdparty/openlibm/src \
+    -I bootloader/3rdparty/openlibm/include \
+    -I bootloader/3rdparty/openlibm/src \
     -ffreestanding \
     -fno-builtin \
     -fno-stack-protector \
@@ -49,7 +49,7 @@ for source_path in "${kernel_sources[@]}"; do
 done
 
 ld \
-  -T MyLoader/kernel/linker.ld \
-  -o Build/MyLoader/kernel.elf \
+  -T bootloader/kernel/linker.ld \
+  -o Build/bootloader/kernel.elf \
   "${object_files[@]}" \
   "${object_root}/openlibm_build/libopenlibm.a"

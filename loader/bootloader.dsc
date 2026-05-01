@@ -1,9 +1,9 @@
 [Defines]
-  PLATFORM_NAME                  = MyLoader
+  PLATFORM_NAME                  = bootloader
   PLATFORM_GUID                  = ABCDEFAB-CDEF-CDEF-CDEF-ABCDEFABCDEF
   PLATFORM_VERSION               = 1.0
   DSC_SPECIFICATION              = 0x0001001B
-  OUTPUT_DIRECTORY               = Build/MyLoader
+  OUTPUT_DIRECTORY               = Build/bootloader
   SUPPORTED_ARCHITECTURES        = AARCH64
   BUILD_TARGETS                  = DEBUG|RELEASE
   SKUID_IDENTIFIER               = DEFAULT
@@ -24,4 +24,4 @@
   !include MdePkg/MdeLibs.dsc.inc
 
 [Components]
-  MyLoader/loader/MyLoader.inf
+  bootloader/loader/bootloader.inf

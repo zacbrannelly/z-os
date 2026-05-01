@@ -5,7 +5,7 @@ dd if=/dev/zero of=efiboot.img bs=1M count=16
 mkfs.vfat efiboot.img
 mmd -i efiboot.img ::/EFI
 mmd -i efiboot.img ::/EFI/BOOT
-mcopy -i efiboot.img Build/MyLoader/DEBUG_GCC5/AARCH64/MyLoader.efi ::/EFI/BOOT/BOOTAA64.EFI
+mcopy -i efiboot.img Build/bootloader/DEBUG_GCC5/AARCH64/bootloader.efi ::/EFI/BOOT/BOOTAA64.EFI
 
 # Create ISO image
 mkdir -p iso
@@ -20,4 +20,4 @@ xorriso -as mkisofs \
   iso/
 
 # Move ISO image to Build directory (so it is accessible from the host)
-mv uefi-hello.iso Build/MyLoader
+mv uefi-hello.iso Build/bootloader
