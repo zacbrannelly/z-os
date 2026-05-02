@@ -1,0 +1,43 @@
+name: Build Boot Artifacts
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build Docker image
+        run: docker build -t z-os-dev:ci .
+
+      - name: Build bootloader and kernel in container
+        run: |
+          mkdir -p build/edk2 build/cmake/release esp
+          docker run --rm \
+            -v "${{ github.workspace }}:/opt/edk2/bootloader" \
+            -v "${{ github.workspace }}/build/edk2:/opt/edk2/Build/bootloader" \
+            -v "${{ github.workspace }}/esp:/esp" \
+            -w /opt/edk2 \
+            z-os-dev:ci \
+            bash -lc "./bootloader/scripts/build_entrypoint.sh"
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-elf
+          path: build/cmake/release/artifacts/kernel.elf
+          if-no-files-found: error
+
+      - name: Upload bootloader artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootloader-efi
+          path: esp/EFI/BOOT/BOOTAA64.EFI
+          if-no-files-found: error
