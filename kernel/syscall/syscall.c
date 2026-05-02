@@ -4,6 +4,7 @@
 #include "../assert.h"
 
 #include "syscall_test.h"
+#include "syscall_console_write.h"
 
 /**
 * Calling conventions 
@@ -35,6 +36,9 @@ void syscall_handler(exception_frame_t *frame) {
     switch (syscall_idx) {
         case SYSCALL_TEST:
             frame->registers[0] = syscall_test_impl(frame);
+            break;
+        case SYSCALL_CONSOLE_WRITE:
+            syscall_console_write_impl(frame);
             break;
         default:
             console_write("Unknown syscall index: ");
