@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(my_bootloader LANGUAGES C ASM)
+project(z_os LANGUAGES C ASM)
 
 # General CMake configuration for the in-container build.
 set(CMAKE_C_STANDARD 11)
