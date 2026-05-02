@@ -16,8 +16,8 @@ typedef struct text_input_t {
     uint8_t key_down[6];
 } text_input_t;
 
-int text_input_init(text_input_t *text_input);
-int text_input_destroy(text_input_t *text_input);
+int text_input_alloc(text_input_t *text_input);
+int text_input_free(text_input_t *text_input);
 int text_input_add_char(text_input_t *text_input, char c);
 int text_input_remove_char(text_input_t *text_input);
 int text_input_move_cursor(text_input_t *text_input, int32_t dx);

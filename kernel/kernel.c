@@ -134,7 +134,7 @@ void kernel_main(boot_info_t *boot_info) {
     }
 
     text_input_t text_input;
-    if (text_input_init(&text_input) < 0) {
+    if (text_input_alloc(&text_input) < 0) {
         console_write("Failed to initialize text input\r\n");
         return;
     }

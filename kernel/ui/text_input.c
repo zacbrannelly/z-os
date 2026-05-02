@@ -16,7 +16,7 @@
 #define TEXT_INPUT_INITIAL_CAPACITY 128
 #define TEXT_INPUT_CHAR_WIDTH 8
 
-int text_input_init(text_input_t *text_input) {
+int text_input_alloc(text_input_t *text_input) {
     memory_set(text_input, 0, sizeof(text_input_t));
 
     text_input->text = (char *)kmalloc(TEXT_INPUT_INITIAL_CAPACITY);
@@ -39,7 +39,7 @@ int text_input_init(text_input_t *text_input) {
     return 0;
 }
 
-int text_input_destroy(text_input_t *text_input) {
+int text_input_free(text_input_t *text_input) {
     kfree(text_input->text);
     memory_set(text_input, 0, sizeof(text_input_t));
     return 0;
