@@ -23,38 +23,15 @@ void syscall_test(void) {
         SYSCALL_TEST_ARG4,
         SYSCALL_TEST_ARG5
     );
-
-    if (return_value != SYSCALL_TEST_RETURN_VALUE) {
-        console_write("SYSCALL_TEST returned incorrect value\r\n");
-        assert(0);
-    }
+    assert(return_value == SYSCALL_TEST_RETURN_VALUE);
 }
 
 uint64_t syscall_test_impl(exception_frame_t *frame) {
-    if (frame->registers[0] != SYSCALL_TEST_ARG0) {
-        console_write("SYSCALL_TEST_ARG0 returned incorrect value\r\n");
-        assert(0);
-    }
-    if (frame->registers[1] != SYSCALL_TEST_ARG1) {
-        console_write("SYSCALL_TEST_ARG1 returned incorrect value\r\n");
-        assert(0);
-    }
-    if (frame->registers[2] != SYSCALL_TEST_ARG2) {
-        console_write("SYSCALL_TEST_ARG2 returned incorrect value\r\n");
-        assert(0);
-    }
-    if (frame->registers[3] != SYSCALL_TEST_ARG3) {
-        console_write("SYSCALL_TEST_ARG3 returned incorrect value\r\n");
-        assert(0);
-    }
-    if (frame->registers[4] != SYSCALL_TEST_ARG4) {
-        console_write("SYSCALL_TEST_ARG4 returned incorrect value\r\n");
-        assert(0);
-    }
-    if (frame->registers[5] != SYSCALL_TEST_ARG5) {
-        console_write("SYSCALL_TEST_ARG5 returned incorrect value\r\n");
-        assert(0);
-    }
-
+    assert(frame->registers[0] == SYSCALL_TEST_ARG0);
+    assert(frame->registers[1] == SYSCALL_TEST_ARG1);
+    assert(frame->registers[2] == SYSCALL_TEST_ARG2);
+    assert(frame->registers[3] == SYSCALL_TEST_ARG3);
+    assert(frame->registers[4] == SYSCALL_TEST_ARG4);
+    assert(frame->registers[5] == SYSCALL_TEST_ARG5);
     return SYSCALL_TEST_RETURN_VALUE;
 }
