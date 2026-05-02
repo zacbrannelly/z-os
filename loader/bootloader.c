@@ -107,31 +107,14 @@ EFI_STATUS exit_boot_services(IN EFI_HANDLE image_handle, IN EFI_SYSTEM_TABLE *s
   return EFI_SUCCESS;
 }
 
-EFI_STATUS EFIAPI UefiMain (
-  IN EFI_HANDLE image_handle,
-  IN EFI_SYSTEM_TABLE *system_table
+static EFI_STATUS load_file(
+  EFI_SYSTEM_TABLE *system_table,
+  EFI_FILE_PROTOCOL *file_protocol,
+  CHAR16 *file_path,
+  uint8_t **file_buffer_ptr,
+  UINTN *file_size
 ) {
-  // ================================ Load the kernel ELF file ========================================
-
-  EFI_STATUS status = system_table->BootServices->LocateProtocol(
-    &gEfiSimpleFileSystemProtocolGuid,
-    NULL,
-    (VOID **)&simple_file_system_protocol
-  );
-
-  if (EFI_ERROR(status)) {
-    Print(L"Failed to locate simple file system protocol: %r\r\n", status);
-    return status;
-  }
-
-  EFI_FILE_PROTOCOL *file_protocol;
-  status = simple_file_system_protocol->OpenVolume(simple_file_system_protocol, &file_protocol);
-  if (EFI_ERROR(status)) {
-    Print(L"Failed to open volume: %r\r\n", status);
-    return status;
-  }
-
-  status = file_protocol->Open(file_protocol, &file_protocol, L"\\kernel.elf", EFI_FILE_MODE_READ, 0);
+  EFI_STATUS status = file_protocol->Open(file_protocol, &file_protocol, file_path, EFI_FILE_MODE_READ, 0);
   if (EFI_ERROR(status)) {
     Print(L"Failed to open file: %r\r\n", status);
     return status;
@@ -161,22 +144,60 @@ EFI_STATUS EFIAPI UefiMain (
     return status;
   }
 
-  // Allocate a buffer of the size of the kernel file.
-  UINTN kernel_elf_size = (UINTN)file_info->FileSize;
-  uint8_t *kernel_elf_buffer = NULL;
+  // Allocate a buffer of the size of the file.
+  *file_size = (UINTN)file_info->FileSize;
   status = system_table->BootServices->AllocatePool(
     EfiLoaderData,
-    kernel_elf_size,
-    (VOID **)&kernel_elf_buffer
+    *file_size,
+    (VOID **)file_buffer_ptr
   );
   if (EFI_ERROR(status)) {
-    Print(L"Failed to allocate pool for kernel buffer: %r\r\n", status);
+    Print(L"Failed to allocate file buffer: %r\r\n", status);
     return status;
   }
 
-  status = file_protocol->Read(file_protocol, &kernel_elf_size, kernel_elf_buffer);
+  status = file_protocol->Read(file_protocol, file_size, *file_buffer_ptr);
   if (EFI_ERROR(status)) {
     Print(L"Failed to read file: %r\r\n", status);
+    return status;
+  }
+
+  // Clean up
+  system_table->BootServices->FreePool(file_info);
+  file_info = NULL;
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI UefiMain (
+  IN EFI_HANDLE image_handle,
+  IN EFI_SYSTEM_TABLE *system_table
+) {
+  // ================================ Load the kernel ELF file ========================================
+
+  EFI_STATUS status = system_table->BootServices->LocateProtocol(
+    &gEfiSimpleFileSystemProtocolGuid,
+    NULL,
+    (VOID **)&simple_file_system_protocol
+  );
+
+  if (EFI_ERROR(status)) {
+    Print(L"Failed to locate simple file system protocol: %r\r\n", status);
+    return status;
+  }
+
+  EFI_FILE_PROTOCOL *file_protocol;
+  status = simple_file_system_protocol->OpenVolume(simple_file_system_protocol, &file_protocol);
+  if (EFI_ERROR(status)) {
+    Print(L"Failed to open volume: %r\r\n", status);
+    return status;
+  }
+
+  uint8_t *kernel_elf_buffer = NULL;
+  UINTN kernel_elf_size = 0;
+  status = load_file(system_table, file_protocol, L"kernel.elf", &kernel_elf_buffer, &kernel_elf_size);
+  if (EFI_ERROR(status)) {
+    Print(L"Failed to load kernel ELF file: %r\r\n", status);
     return status;
   }
 
@@ -292,10 +313,6 @@ EFI_STATUS EFIAPI UefiMain (
   );
 
   // ============================================ Clean up memory ============================================
-
-  // Free the file info buffer.
-  system_table->BootServices->FreePool(file_info);
-  file_info = NULL;
 
   // Free the kernel buffer.
   system_table->BootServices->FreePool(kernel_elf_buffer);
