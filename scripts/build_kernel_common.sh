@@ -17,7 +17,7 @@ fi
 
 mkdir -p "${object_root}"
 
-mapfile -t kernel_sources < <(find bootloader/kernel -name '*.c' | sort)
+mapfile -t kernel_sources < <(find bootloader/kernel \( -name '*.c' -o -name '*.S' \) | sort)
 
 if [ "${#kernel_sources[@]}" -eq 0 ]; then
   echo "No kernel sources found" >&2

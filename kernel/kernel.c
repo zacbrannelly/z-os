@@ -18,6 +18,7 @@
 #include "kmalloc.h"
 #include "memory.h"
 #include "time.h"
+#include "exception_vector_table.h"
 
 #include <stddef.h>
 
@@ -40,6 +41,12 @@ void kernel_main(boot_info_t *boot_info) {
         return;
     }
     console_set_active(&console);
+
+    // Initialize the exception vector table.
+    if (exception_vector_table_init() < 0) {
+        console_write("Failed to initialize exception vector table\r\n");
+        return;
+    }
 
     // Initialize virtual memory mapping system.
     if (mmap_init(
