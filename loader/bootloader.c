@@ -8,6 +8,7 @@
 #include <Protocol/SimpleFileSystem.h>
 #include <Guid/FileInfo.h>
 
+#include "../boot_info.h"
 #include "kernel_elf.h"
 #include "kernel_loader.h"
 #include "virtual_addr.h"
@@ -18,22 +19,6 @@
 
 EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *simple_file_system_protocol;
 EFI_GRAPHICS_OUTPUT_PROTOCOL *graphics_output_protocol;
-
-typedef struct boot_info {
-  // Framebuffer information.
-  uint32_t *framebuffer;
-  uint32_t framebuffer_size;
-  uint32_t framebuffer_width;
-  uint32_t framebuffer_stride;
-
-  // Memory map provided by the bootloader.
-  void* memory_map;
-  uint64_t memory_map_size;
-  uint64_t memory_map_descriptor_size;
-
-  // ACPI table.
-  void *acpi_table;
-} boot_info_t;
 
 // Handoff function to jump to the kernel.
 void __attribute__((noreturn)) handoff(
