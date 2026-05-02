@@ -260,6 +260,8 @@ EFI_STATUS EFIAPI UefiMain (
   }
 
   boot_info_t boot_info;
+  SetMem(&boot_info, sizeof(boot_info_t), 0);
+
   boot_info.framebuffer = (uint32_t *)graphics_output_protocol->Mode->FrameBufferBase;
   boot_info.framebuffer_size = graphics_output_protocol->Mode->Info->HorizontalResolution * graphics_output_protocol->Mode->Info->VerticalResolution;
   boot_info.framebuffer_width = graphics_output_protocol->Mode->Info->HorizontalResolution;

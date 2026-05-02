@@ -1,16 +1,7 @@
 #!/bin/bash
 
-# Build the OS loader.
-./bootloader/scripts/build_loader.sh
+set -euo pipefail
 
-# Build the kernel.
-./bootloader/scripts/debug_build_kernel.sh
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Make the ESP directory.
-mkdir -p /esp/EFI/BOOT
-
-# Copy the loader to the ESP directory.
-cp ./Build/bootloader/DEBUG_GCC5/AARCH64/bootloader.efi /esp/EFI/BOOT/BOOTAA64.EFI
-
-# Copy the kernel to the ESP directory.
-cp ./Build/bootloader/kernel.elf /esp/kernel.elf
+"${script_dir}/cmake_build_entrypoint.sh" /opt/edk2/bootloader/build/cmake/debug Debug DEBUG

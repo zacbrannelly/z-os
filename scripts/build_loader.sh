@@ -1,4 +1,7 @@
 #!/bin/bash
 
-source edksetup.sh
-build -a AARCH64 -t GCC5 -p bootloader/loader/bootloader.dsc -b DEBUG
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+"${script_dir}/cmake_build_target.sh" /opt/edk2/bootloader/build/cmake/release Release DEBUG bootloader

@@ -2,4 +2,6 @@
 
 set -euo pipefail
 
-./bootloader/scripts/build_kernel_common.sh -O0 Build/bootloader/kernel_objects/debug -g
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+"${script_dir}/cmake_build_target.sh" /opt/edk2/bootloader/build/cmake/debug Debug DEBUG kernel
