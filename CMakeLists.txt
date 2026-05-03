@@ -21,6 +21,7 @@ add_subdirectory(3rdparty/openlibm EXCLUDE_FROM_ALL)
 # freestanding C/ASM sources under the kernel/ tree.
 file(GLOB_RECURSE KERNEL_C_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/kernel/*.c")
 file(GLOB_RECURSE KERNEL_ASM_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/kernel/*.S")
+file(GLOB_RECURSE LOADER_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/loader/*")
 
 # Compile the kernel into objects only. We do not use CMake's normal executable
 # link step because the original build linked the kernel directly with ld and a
@@ -71,8 +72,7 @@ endif()
 
 # Recreate the old kernel final link exactly: invoke ld directly with the kernel
 # linker script, all compiled kernel objects, and the static openlibm archive.
-add_custom_command(
-    OUTPUT "${KERNEL_ELF}"
+add_custom_target(kernel ALL
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/artifacts"
     COMMAND /usr/bin/ld
         -T "${KERNEL_LINKER_SCRIPT}"
@@ -88,22 +88,27 @@ add_custom_command(
     VERBATIM
 )
 
-# User-facing kernel target. Building this target produces artifacts/kernel.elf.
-add_custom_target(kernel ALL
-    DEPENDS "${KERNEL_ELF}"
-)
-
 string(TOUPPER "${EDK2_BUILD_TARGET}" EDK2_BUILD_TARGET_UPPER)
 set(BOOTLOADER_EFI "${EDK2_OUTPUT_DIR}/${EDK2_BUILD_TARGET_UPPER}_GCC5/AARCH64/bootloader.efi")
+set(BOOTLOADER_STAMP "${CMAKE_BINARY_DIR}/artifacts/bootloader.stamp")
 
 # Build the UEFI bootloader through EDK2. CMake orchestrates the step, but the
 # actual bootloader build still happens through EDK2's build system.
-add_custom_target(bootloader
+add_custom_command(
+    OUTPUT "${BOOTLOADER_STAMP}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/artifacts"
     COMMAND /bin/bash -c "set -eo pipefail; cd /opt/edk2; source edksetup.sh; build -a AARCH64 -t GCC5 -p bootloader/loader/bootloader.dsc -b ${EDK2_BUILD_TARGET_UPPER}"
+    COMMAND "${CMAKE_COMMAND}" -E touch "${BOOTLOADER_STAMP}"
     BYPRODUCTS "${BOOTLOADER_EFI}"
+    DEPENDS
+        ${LOADER_SOURCES}
     WORKING_DIRECTORY /opt/edk2
     COMMENT "Building EDK2 bootloader (${EDK2_BUILD_TARGET_UPPER})"
     VERBATIM
+)
+
+add_custom_target(bootloader
+    DEPENDS "${BOOTLOADER_STAMP}"
 )
 
 # Stage the final boot artifacts into the ESP directory consumed by QEMU:
