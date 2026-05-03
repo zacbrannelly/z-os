@@ -25,7 +25,7 @@ int exception_vector_table_init(void) {
     return 0;
 }
 
-void handle_current_el_sp1_sync_exception(exception_frame_t *frame, uint64_t esr, uint64_t elr, uint64_t spsr) {
+void handle_current_el_sp1_sync_exception(exception_frame_t *frame, uint64_t esr) {
     uint8_t exception_class = EXCEPTION_CLASS(esr);
     switch (exception_class) {
         case SVC_EXCEPTION_CLASS:

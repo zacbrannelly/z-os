@@ -41,7 +41,7 @@ current_el_sp0_serror:
 
 current_el_sp1_sync:
     // Store all registers on the stack.
-    sub sp, sp, #(32 * 8)
+    sub sp, sp, #(35 * 8)
     stp x0,  x1,  [sp, #(0 * 16)]
     stp x2,  x3,  [sp, #(1 * 16)]
     stp x4,  x5,  [sp, #(2 * 16)]
@@ -59,11 +59,17 @@ current_el_sp1_sync:
     stp x28, x29, [sp, #(14 * 16)]
     stp x30, xzr, [sp, #(15 * 16)]
 
+    // Store other useful metadata on the stack.
+    add x0, sp, #(35 * 8)         // Calculate the original SP.
+    str x0,       [sp, #(32 * 8)]
+    mrs x0, ELR_EL1
+    str x0,       [sp, #(33 * 8)]
+    mrs x0, SPSR_EL1
+    str x0,       [sp, #(34 * 8)]
+
     // Call the sync exception handler.
     mov x0, sp
     mrs x1, ESR_EL1
-    mrs x2, ELR_EL1
-    mrs x3, SPSR_EL1
     bl handle_current_el_sp1_sync_exception
 
     // Restore the previous registers.
@@ -83,7 +89,7 @@ current_el_sp1_sync:
     ldp x26, x27, [sp, #(13 * 16)]
     ldp x28, x29, [sp, #(14 * 16)]
     ldr x30,      [sp, #(15 * 16)]
-    add sp, sp, #(32 * 8)
+    add sp, sp, #(35 * 8)
 
     // Return to what the CPU was doing prior.
     eret

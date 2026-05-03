@@ -6,6 +6,7 @@
 #include "drivers/usb/usb_core.h"
 #include "drivers/usb/usb_hid_mouse.h"
 #include "drivers/usb/usb_hid_keyboard.h"
+#include "drivers/usb/usb_hid_keys.h"
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
 #include "gfx/gfx.h"
@@ -19,12 +20,74 @@
 #include "memory.h"
 #include "time.h"
 #include "exception_vector_table.h"
+#include "syscall/syscall_yield.h"
+#include "scheduler/scheduler.h"
 
 #include <stddef.h>
 
 // TODO: Get these from the bootloader.
 static const uint64_t pl011_base_address = 0x09000000;
 static const uint64_t pl011_base_clock = 0x16e3600; // 24 MHz
+
+static void kernel_thread_entry(void) {
+    text_input_t text_input;
+    if (text_input_alloc(&text_input) < 0) {
+        console_write("Failed to initialize text input\r\n");
+        return;
+    }
+
+    text_input.position.x = 100;
+    text_input.position.y = 100;
+
+    while (1) {
+        gfx_clear(GFX_COLOR_BLACK);
+
+        xhci_poll_events();
+        usb_hid_mouse_poll();
+        usb_hid_keyboard_poll();
+        cursor_update();
+
+        usb_hid_keyboard_report_t *keyboard_report = usb_hid_keyboard_get_report();
+        if (keyboard_report != NULL) {
+            for (uint8_t i = 0; i < 6; i++) {
+                if (keyboard_report->keypress[i] == KEY_A) {
+                    // Yield control.
+                    console_write("Yielding control\r\n");
+                    syscall_yield();
+                }
+            }
+        }
+
+        text_input_draw(&text_input);
+        cursor_draw();
+        gfx_swap_buffers();
+    }
+}
+
+static void console_kernel_thread_entry(void) {
+    while (1) {
+        // Wait for a character to be received.
+        char c = console_getc();
+        if (c == 'q') {
+            syscall_yield();
+        }
+
+        // Newline or carriage return.
+        if (c == '\r' || c == '\n') {
+            console_write("\r\n");
+            continue;
+        }
+
+        // Backspace or delete.
+        if (c == '\b' || c == 0x7f) {
+            console_write("\b \b");
+            continue;
+        }
+
+        // Echo the character back to the serial port.
+        console_putc(c);
+    }
+}
 
 void kernel_main(boot_info_t *boot_info) {
     // Initialize the serial port.
@@ -133,50 +196,35 @@ void kernel_main(boot_info_t *boot_info) {
         return;
     }
 
-    text_input_t text_input;
-    if (text_input_alloc(&text_input) < 0) {
-        console_write("Failed to initialize text input\r\n");
+    if (scheduler_init() < 0) {
+        console_write("Failed to initialize scheduler\r\n");
         return;
     }
 
-    while (1) {
-        gfx_clear(GFX_COLOR_BLACK);
-
-        xhci_poll_events();
-        usb_hid_mouse_poll();
-        usb_hid_keyboard_poll();
-        cursor_update();
-
-        text_input_draw(&text_input);
-        cursor_draw();
-        gfx_swap_buffers();
+    uint64_t kernel_thread_stack = (uint64_t)kmalloc(4096);
+    thread_t kernel_thread;
+    if (thread_init(&kernel_thread, (uint64_t)kernel_thread_entry, kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) < 0) {
+        console_write("Failed to initialize kernel thread\r\n");
+        return;
     }
 
-    while (1) {
-        // Wait for a character to be received.
-        char c = console_getc();
-        if (c == 'q') {
-            break;
-        }
-
-        // Newline or carriage return.
-        if (c == '\r' || c == '\n') {
-            console_write("\r\n");
-            continue;
-        }
-
-        // Backspace or delete.
-        if (c == '\b' || c == 0x7f) {
-            console_write("\b \b");
-            continue;
-        }
-
-        // Echo the character back to the serial port.
-        console_putc(c);
+    if (thread_start(&kernel_thread) < 0) {
+        console_write("Failed to start kernel thread\r\n");
+        return;
     }
 
-    // Spin forever
-    while (1) {
-        __asm__ volatile("wfe");
+    uint64_t console_kernel_thread_stack = (uint64_t)kmalloc(4096);
+    thread_t console_kernel_thread;
+    if (thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) < 0) {
+        console_write("Failed to initialize console kernel thread\r\n");
+        return;
     }
+
+    if (thread_start(&console_kernel_thread) < 0) {
+        console_write("Failed to start console kernel thread\r\n");
+        return;
+    }
+
+    scheduler_run();
+    __builtin_unreachable();
 }

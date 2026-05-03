@@ -23,6 +23,7 @@ int text_input_alloc(text_input_t *text_input) {
     if (text_input->text == NULL) {
         return -1;
     }
+    memory_set(text_input->text, 0, TEXT_INPUT_INITIAL_CAPACITY);
 
     text_input->length = 0;
     text_input->capacity = TEXT_INPUT_INITIAL_CAPACITY;
