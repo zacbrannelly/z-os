@@ -70,6 +70,7 @@ static void console_kernel_thread_entry(void) {
         char c = console_getc();
         if (c == 'q') {
             syscall_yield();
+            continue;
         }
 
         // Newline or carriage return.
