@@ -32,6 +32,7 @@ int scheduler_init(void) {
     if (g_scheduler.kernel_stack_top == 0) {
         return -1;
     }
+    g_scheduler.kernel_stack_top += KERNEL_STACK_SIZE;
 
     linked_list_init(&g_scheduler.run_queue);
     g_scheduler.current_thread = NULL;
