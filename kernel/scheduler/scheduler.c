@@ -4,15 +4,19 @@
 
 #include "../assert.h"
 #include "../kmalloc.h"
+#include "../memory.h"
 #include "../exception_vector_table.h"
 
 typedef struct scheduler_t {
+    uint64_t kernel_stack_top;
     thread_t *current_thread;
     linked_list_t run_queue;
     thread_t idle_thread;
 } scheduler_t;
 
 static scheduler_t g_scheduler;
+
+#define KERNEL_STACK_SIZE (8 * 4096)
 
 static void idle_thread_entry(void) {
     while (1) {
@@ -21,6 +25,14 @@ static void idle_thread_entry(void) {
 }
 
 int scheduler_init(void) {
+    memory_set(&g_scheduler, 0, sizeof(scheduler_t));
+
+    // Allocate the kernel stack.
+    g_scheduler.kernel_stack_top = (uint64_t)kmalloc(KERNEL_STACK_SIZE);
+    if (g_scheduler.kernel_stack_top == 0) {
+        return -1;
+    }
+
     linked_list_init(&g_scheduler.run_queue);
     g_scheduler.current_thread = NULL;
 
@@ -62,6 +74,14 @@ static void __attribute__((noreturn)) context_switch(thread_t *next_thread) {
     __builtin_unreachable();
 }
 
+static void restore_kernel_stack(void) {
+    __asm__ volatile("mov sp, %0" : : "r" (g_scheduler.kernel_stack_top));
+}
+
+static void store_kernel_stack(void) {
+    __asm__ volatile("mov %0, sp" : "=r" (g_scheduler.kernel_stack_top));
+}
+
 void scheduler_run(void) {
     thread_t *prev_thread = g_scheduler.current_thread;
     thread_t *next_thread = NULL;
@@ -88,11 +108,14 @@ void scheduler_run(void) {
     next_thread->state = THREAD_STATE_RUNNING;
 
     if (prev_thread != next_thread) {
+        store_kernel_stack();
         context_switch(next_thread);
     }
 }
 
 void scheduler_yield(exception_frame_t *frame) {
+    restore_kernel_stack();
+
     thread_t *current_thread = g_scheduler.current_thread;
     assert(current_thread != NULL);
 
@@ -115,6 +138,8 @@ void scheduler_yield(exception_frame_t *frame) {
 }
 
 void scheduler_terminate(void) {
+    restore_kernel_stack();
+
     // Mark the thread TERMINATED.
     g_scheduler.current_thread->state = THREAD_STATE_TERMINATED;
 

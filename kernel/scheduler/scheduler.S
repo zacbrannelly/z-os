@@ -6,20 +6,6 @@ scheduler_switch_to_thread:
     // Save the next context pointer on the stack (used during restore).
     mov x2, x0
 
-    ldr x0, [x2, #(35 * 8)] // Read the ELR_EL1 from the thread context.
-    cmp x0, #0              // If ELR_EL1 is 0, then we are starting a thread.
-    b.eq store_kernel_sp    // On initial start of a thread, we need to store the kernel's SP on the thread's stack.
-    b build_restore_frame   // Otherwise, since we are resuming, we already have the kernel's SP stored on the thread's stack.
-
-store_kernel_sp:
-    // Allocate the kernel's SP on the thread's stack.
-    ldr x3, [x2, #8]  // Fetch the thread's SP.
-    sub x3, x3, #8    // Allocate space for the kernel's SP in the thread's stack.
-    mov x0, sp        // Load the kernel's SP into x0.
-    str x0, [x3, #0]  // Store the kernel's SP in the thread's stack.
-    str x3, [x2, #8]  // Store the new thread SP in the thread's context.
-
-build_restore_frame:
     // Allocate space for the registers to be restored.
     sub sp, sp, #(36 * 8)
 
@@ -80,7 +66,7 @@ start_thread:
     blr x2
 
     // Terminate the thread on return.
-    b terminate_thread
+    b scheduler_terminate
 
 resume_thread:
     // Restore ELR_EL1.
@@ -91,11 +77,3 @@ resume_thread:
 
     // Resume the thread from where it was interrupted.
     eret
-
-terminate_thread:
-    // Restore the kernel stack pointer.
-    ldr x0, [sp, #0]  // Fetch kernel SP from thread stack.
-    mov sp, x0        // Set SP to the kernel SP.
-
-    // Entrypoint returned, so terminate the thread.
-    b scheduler_terminate
