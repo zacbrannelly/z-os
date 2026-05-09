@@ -5,6 +5,8 @@
 #include "../../format.h"
 #include "../../page_alloc.h"
 #include "../../mmap.h"
+#include "../../mmio.h"
+
 #include "../../utils/ring_buffer.h"
 #include "../usb/usb_core.h"
 
@@ -225,37 +227,7 @@ typedef struct xhci_driver_t {
     xhci_device_state_t devices[XHCI_MAX_NUM_SLOTS];
 } xhci_driver_t;
 
-static xhci_driver_t g_xhci_driver = {
-    .mmio_base = NULL,
-    .caps = NULL,
-    .ops = NULL,
-    .rt = NULL,
-    .doorbells_array = NULL,
-    .pci_bus = 0,
-    .pci_device = 0,
-    .pci_function = 0,
-    .dcba_array = NULL,
-    .command_ring = {
-        .base_address = NULL,
-        .enqueue_ptr = NULL,
-        .dequeue_ptr = NULL,
-        .ring_size = 0,
-        .entry_count = 0,
-        .cycle_bit = 0,
-        .link_trb = NULL,
-    },
-    .event_ring = {
-        .base_address = NULL,
-        .enqueue_ptr = NULL,
-        .dequeue_ptr = NULL,
-        .ring_size = 0,
-        .entry_count = 0,
-        .cycle_bit = 0,
-        .link_trb = NULL,
-    },
-    .event_ring_segment_table = NULL,
-    .last_modified_heap_page_idx = 0,
-};
+static xhci_driver_t g_xhci_driver;
 
 static inline void xhci_data_sync_barrier(void) {
     __asm__ volatile("dsb sy" ::: "memory");
@@ -421,12 +393,67 @@ int xhci_locate_device(void) {
         g_xhci_driver.pci_function,
         PCI_CONFIG_BAR1
     );
-    
-    // TODO: Map this address space to the kernel's virtual address space.
-    // TODO: Make sure to map this as device memory (not normal memory).
+
+    // Write all 1s to the BARs to determine the actual size of the BARs.
+    pcie_config_write32(
+        g_xhci_driver.pci_bus,
+        g_xhci_driver.pci_device,
+        g_xhci_driver.pci_function,
+        PCI_CONFIG_BAR0,
+        0xFFFFFFFF
+    );
+    pcie_config_write32(
+        g_xhci_driver.pci_bus,
+        g_xhci_driver.pci_device,
+        g_xhci_driver.pci_function,
+        PCI_CONFIG_BAR1,
+        0xFFFFFFFF
+    );
+    uint32_t raw_bar0 = pcie_config_read32(
+        g_xhci_driver.pci_bus,
+        g_xhci_driver.pci_device,
+        g_xhci_driver.pci_function,
+        PCI_CONFIG_BAR0
+    );
+    uint32_t raw_bar1 = pcie_config_read32(
+        g_xhci_driver.pci_bus,
+        g_xhci_driver.pci_device,
+        g_xhci_driver.pci_function,
+        PCI_CONFIG_BAR1
+    );
+
+    uint64_t bar_mask = ((uint64_t)raw_bar1 << 32) | (raw_bar0 & ~0xF);
+    uint64_t bar_size = ~bar_mask + 1;
+
+    console_write("XHCI BAR size: ");
+    console_write_hex(bar_size);
+    console_write("\r\n");
+
+    // Restore the original BAR values.
+    pcie_config_write32(
+        g_xhci_driver.pci_bus,
+        g_xhci_driver.pci_device,
+        g_xhci_driver.pci_function,
+        PCI_CONFIG_BAR0,
+        bar0
+    );
+    pcie_config_write32(
+        g_xhci_driver.pci_bus,
+        g_xhci_driver.pci_device,
+        g_xhci_driver.pci_function,
+        PCI_CONFIG_BAR1,
+        bar1
+    );
+
+    // Map the XHCI MMIO base address.
     uint64_t base_address_low = (uint64_t)(bar0 & 0xfffffff0);
-    uint64_t base_address_high = (uint64_t)(bar1 & 0xfffffff0);
+    uint64_t base_address_high = (uint64_t)bar1;
     uint64_t base_address = (base_address_high << 32) | base_address_low;
+
+    if (mmio_map_region(base_address, bar_size, (uint64_t *)&g_xhci_driver.mmio_base) < 0) {
+        console_write("Failed to map XHCI MMIO base address\r\n");
+        return -1;
+    }
 
     // Enable the Bus Master and Memory Space capabilities.
     pcie_config_write16(
@@ -437,7 +464,6 @@ int xhci_locate_device(void) {
         PCI_COMMAND_MEMORY_SPACE_ENABLE | PCI_COMMAND_BUS_MASTER_ENABLE
     );
 
-    g_xhci_driver.mmio_base = (uint8_t *)base_address;
     g_xhci_driver.caps = g_xhci_driver.mmio_base;
     g_xhci_driver.cap_length = g_xhci_driver.mmio_base[0];
     g_xhci_driver.ops = g_xhci_driver.mmio_base + g_xhci_driver.cap_length;
@@ -1057,8 +1083,8 @@ int xhci_get_port_status(uint8_t port_number, xhci_port_status_t *port_status) {
 }
 
 int xhci_init(void) {
-    // Zero out the device state array.
-    memory_set(g_xhci_driver.devices, 0, sizeof(g_xhci_driver.devices));
+    // Zero out the driver struct.
+    memory_set(&g_xhci_driver, 0, sizeof(xhci_driver_t));
 
     if (xhci_allocate_heap() < 0) {
         return -1;

@@ -19,6 +19,7 @@
 #include "kmalloc.h"
 #include "memory.h"
 #include "time.h"
+#include "assert.h"
 #include "exception_vector_table.h"
 #include "syscall/syscall_yield.h"
 #include "scheduler/scheduler.h"
@@ -28,6 +29,8 @@
 // TODO: Get these from the bootloader.
 static const uint64_t pl011_base_address = 0x09000000;
 static const uint64_t pl011_base_clock = 0x16e3600; // 24 MHz
+
+static boot_info_t g_boot_info;
 
 static void kernel_thread_entry(void) {
     text_input_t text_input;
@@ -91,141 +94,89 @@ static void console_kernel_thread_entry(void) {
 }
 
 void kernel_main(boot_info_t *boot_info) {
-    // Initialize the serial port.
-    pl011_driver_t serial;
-    if (pl011_init(&serial, pl011_base_address, pl011_base_clock) < 0) {
-        console_write("Failed to initialize PL011 UART\r\n");
-        return;
-    }
-
-    // Initialize the console.
-    console_t console;
-    if (uart_console_init(&console, &serial) < 0) {
-        console_write("Failed to initialize UART console\r\n");
-        return;
-    }
-    console_set_active(&console);
-
-    // Initialize the exception vector table.
-    if (exception_vector_table_init() < 0) {
-        console_write("Failed to initialize exception vector table\r\n");
-        return;
-    }
+    // Make a copy of the boot info in the kernel stack.
+    memory_copy(&g_boot_info, boot_info, sizeof(boot_info_t));
+    boot_info = &g_boot_info;
 
     // Initialize virtual memory mapping system.
-    if (mmap_init(
+    assert(mmap_init(
         (efi_memory_descriptor_t *)boot_info->memory_map,
         boot_info->memory_map_size,
         boot_info->memory_map_descriptor_size
-    ) < 0) {
-        console_write("Failed to initialize virtual memory mapping system\r\n");
-        return;
-    }
+    ) == 0);
+
+    // Initialize the exception vector table.
+    assert(exception_vector_table_init() == 0);
+
+    // Initialize the serial port.
+    pl011_driver_t serial;
+    assert(pl011_init(&serial, pl011_base_address, pl011_base_clock) == 0);
+
+    // Initialize the console.
+    console_t console;
+    assert(uart_console_init(&console, &serial) == 0);
+    console_set_active(&console);
 
     // Get the memory map (contains what physical memory is usable and what is reserved).
     mmap_memory_descriptor_t *memory_map = NULL;
     uint64_t memory_map_count = 0;
-    if (mmap_get_memory_map(&memory_map, &memory_map_count) < 0) {
-        console_write("Failed to get memory map\r\n");
-        return;
-    }
+    assert(mmap_get_memory_map(&memory_map, &memory_map_count) == 0);
 
     // Initialize a physical memory page allocator.
-    if (page_alloc_init(memory_map, memory_map_count) < 0) {
-        console_write("Failed to initialize physical memory page allocator\r\n");
-        return;
-    }
+    assert(page_alloc_init(memory_map, memory_map_count) == 0);
     
     // Initialize the kernel heap.
-    if (kernel_heap_init() < 0) {
-        console_write("Failed to initialize kernel heap\r\n");
-        return;
-    }
+    assert(kernel_heap_init() == 0);
 
     // Initialize the graphics system.
-    if (gfx_init(boot_info) < 0) {
-        console_write("Failed to initialize graphics\r\n");
-        return;
-    }
+    assert(gfx_init(boot_info) == 0);
 
+    // Initialize the cursor system.
     uint32_t framebuffer_width = gfx_get_framebuffer_width();
     uint32_t framebuffer_height = gfx_get_framebuffer_height();
+    assert(cursor_init(framebuffer_width, framebuffer_height) == 0);
 
-    if (cursor_init(framebuffer_width, framebuffer_height) < 0) {
-        console_write("Failed to initialize cursor\r\n");
-        return;
-    }
+    // Initialize the ACPI system.
+    assert(acpi_init(boot_info->acpi_table) == 0);
 
-    if (acpi_init(boot_info->acpi_table) < 0) {
-        console_write("Failed to initialize ACPI\r\n");
-        return;
-    }
-
+    // Get the MCFG entry.
     acpi_table_mcfg_entry_t *mcfg_entry = acpi_get_mcfg_entry();
-    if (mcfg_entry == 0) {
-        console_write("Failed to get MCFG entry\r\n");
-        return;
-    }
+    assert(mcfg_entry != 0);
 
-    if (pcie_init(mcfg_entry) < 0) {
-        console_write("Failed to initialize PCIe\r\n");
-        return;
-    }
-    
-    if (xhci_init() < 0) {
-        console_write("Failed to initialize xHCI\r\n");
-        return;
-    }
+    // Initialize the PCIe system.
+    assert(pcie_init(mcfg_entry) == 0);
 
-    if (usb_init() < 0) {
-        console_write("Failed to initialize USB\r\n");
-        return;
-    }
+    // Initialize the xHCI system.
+    assert(xhci_init() == 0);
 
-    if (usb_hid_mouse_init() < 0) {
-        console_write("Failed to initialize USB HID mouse driver\r\n");
-        return;
-    }
+    // Initialize the USB system.
+    assert(usb_init() == 0);
 
-    if (usb_hid_keyboard_init() < 0) {
-        console_write("Failed to initialize USB HID keyboard driver\r\n");
-        return;
-    }
+    // Initialize the USB HID mouse driver.
+    assert(usb_hid_mouse_init() == 0);
 
-    if (usb_parse_interfaces() < 0) {
-        console_write("Failed to parse USB interfaces\r\n");
-        return;
-    }
+    // Initialize the USB HID keyboard driver.
+    assert(usb_hid_keyboard_init() == 0);
 
-    if (scheduler_init() < 0) {
-        console_write("Failed to initialize scheduler\r\n");
-        return;
-    }
+    // Bind the USB drivers to the USB devices.
+    assert(usb_parse_interfaces() == 0);
 
+    // Initialize the scheduler.
+    assert(scheduler_init() == 0);
+
+    // Schedule the main kernel thread.
     uint64_t kernel_thread_stack = (uint64_t)kmalloc(4096);
     thread_t kernel_thread;
-    if (thread_init(&kernel_thread, (uint64_t)kernel_thread_entry, kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) < 0) {
-        console_write("Failed to initialize kernel thread\r\n");
-        return;
-    }
+    assert(thread_init(&kernel_thread, (uint64_t)kernel_thread_entry, kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
+    assert(thread_start(&kernel_thread) == 0);
 
-    if (thread_start(&kernel_thread) < 0) {
-        console_write("Failed to start kernel thread\r\n");
-        return;
-    }
-
+    // Schedule a console kernel thread.
     uint64_t console_kernel_thread_stack = (uint64_t)kmalloc(4096);
     thread_t console_kernel_thread;
-    if (thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) < 0) {
-        console_write("Failed to initialize console kernel thread\r\n");
-        return;
-    }
+    assert(thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
+    assert(thread_start(&console_kernel_thread) == 0);
 
-    if (thread_start(&console_kernel_thread) < 0) {
-        console_write("Failed to start console kernel thread\r\n");
-        return;
-    }
-
+    // Run the scheduler.
     scheduler_run();
     __builtin_unreachable();
 }

@@ -1,5 +1,7 @@
 #include "page_alloc.h"
 #include "console.h"
+#include "mmap.h"
+#include "assert.h"
 
 #include <stddef.h>
 
@@ -39,7 +41,11 @@ static int free_list_push(uint64_t order, uint64_t page_frame_number) {
         return -1;
     }
 
-    free_page_t *free_page = (free_page_t *)((uint64_t)page_frame_number << PAGE_SHIFT);
+    uint64_t physical_address = (uint64_t)page_frame_number << PAGE_SHIFT;
+    uint64_t virtual_address = 0;
+    assert(mmap_physical_to_virtual(physical_address, &virtual_address) == 0);
+
+    free_page_t *free_page = (free_page_t *)virtual_address;
     free_page->next_page = free_lists[order];
     free_lists[order] = free_page;
 
@@ -59,7 +65,10 @@ static int free_list_pop(uint8_t order, uint64_t *found_page_frame_number) {
         return -1;
     }
 
-    uint64_t page_frame_number = (uint64_t)free_page >> PAGE_SHIFT;
+    uint64_t physical_address = 0;
+    assert(mmap_virtual_to_physical((uint64_t)free_page, &physical_address) == 0);
+
+    uint64_t page_frame_number = physical_address >> PAGE_SHIFT;
     page_bitmap[page_frame_number] = (
         (order << 3) |
         PAGE_BITMAP_IS_HEAD_MASK |
@@ -93,7 +102,10 @@ int page_alloc_init(
 
         int64_t remaining_pages = (int64_t)descriptor->number_of_pages;
         uint64_t start_page_frame_idx = descriptor->physical_start_address >> PAGE_SHIFT;
-        free_page_t *free_page = (free_page_t *)descriptor->physical_start_address;
+
+        uint64_t virtual_address = 0;
+        assert(mmap_physical_to_virtual(descriptor->physical_start_address, &virtual_address) == 0);
+        free_page_t *free_page = (free_page_t *)virtual_address;
 
         while (remaining_pages > 0) {
             // Calculate largest order that fits in the remaining space.
@@ -193,7 +205,10 @@ int page_alloc_free(uint64_t physical_start_address, uint8_t order) {
         // Remove the buddy page from the free list.
         free_page_t *current_page = free_lists[current_order];
         while (current_page != NULL) {
-            uint64_t next_page_frame_number = (uint64_t)current_page->next_page >> PAGE_SHIFT;
+            uint64_t physical_address = 0;
+            assert(mmap_virtual_to_physical((uint64_t)current_page->next_page, &physical_address) == 0);
+            
+            uint64_t next_page_frame_number = physical_address >> PAGE_SHIFT;
             if (next_page_frame_number == buddy_page_frame_number) {
                 // Found the buddy page, so we remove it from the free list.
                 current_page->next_page = current_page->next_page->next_page;

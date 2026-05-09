@@ -2,7 +2,7 @@
 #include "../pci/xhci.h"
 #include "../../memory.h"
 #include "../../console.h"
-#include "../../page_alloc.h"
+#include "../../kmalloc.h"
 
 #include <stddef.h>
 
@@ -23,6 +23,8 @@
 
 #define DEVICE_DESCRIPTOR_LENGTH 0x12
 #define CONFIGURATION_DESCRIPTOR_LENGTH 0x9
+
+#define USB_DATA_BUFFER_SIZE 4096
 
 typedef struct usb_get_descriptor_context_t {
     uint8_t callback_called;
@@ -232,18 +234,13 @@ int usb_get_configuration_descriptor(xhci_device_t *device, uint8_t configuratio
 }
 
 int usb_get_all_configuration_descriptors(xhci_device_t *device, uint8_t configuration_index, usb_configuration_descriptor_t *in_configuration_descriptor, usb_descriptor_header_t **out_descriptors) {
-    // Allocate a page for the data buffer.
-    uint64_t data_buffer;
-    if (page_alloc_block(PAGE_ALLOC_ORDER_4KB, &data_buffer) < 0) {
-        console_write("Failed to allocate data stage buffer\r\n");
-        return -1;
-    }
-    memory_set((void *)data_buffer, 0, PAGE_SIZE);
+    void *data_buffer = kmalloc(USB_DATA_BUFFER_SIZE);
+    memory_set(data_buffer, 0, USB_DATA_BUFFER_SIZE);
 
-    int result = usb_get_descriptor(device, USB_DESCRIPTOR_TYPE_CONFIGURATION, configuration_index, (void *)data_buffer, in_configuration_descriptor->wTotalLength);
+    int result = usb_get_descriptor(device, USB_DESCRIPTOR_TYPE_CONFIGURATION, configuration_index, data_buffer, in_configuration_descriptor->wTotalLength);
     if (result < 0) {
         console_write("Failed to get configuration descriptor\r\n");
-        page_alloc_free(data_buffer, PAGE_ALLOC_ORDER_4KB);
+        kfree(data_buffer);
         return -1;
     }
 

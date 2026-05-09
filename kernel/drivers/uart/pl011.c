@@ -1,4 +1,5 @@
 #include "pl011.h"
+#include "../../mmio.h"
 
 // Register offsets
 static const uint32_t DR_OFFSET = 0x000;    // Data Register
@@ -43,11 +44,18 @@ static void pl011_wait_for_busy_clear(const pl011_driver_t *driver) {
 }
 
 int pl011_init(pl011_driver_t *driver, uint64_t base_address, uint64_t base_clock) {
-    driver->base_address = base_address;
     driver->base_clock = base_clock;
     driver->baud_rate = 115200;
     driver->data_bits = 8;
     driver->stop_bits = 1;
+
+    int result = mmio_map_page(
+        base_address,
+        &driver->base_address
+    );
+    if (result < 0) {
+        return -1;
+    }
 
     return pl011_reset(driver);
 }

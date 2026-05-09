@@ -1,17 +1,21 @@
 #include "pcie.h"
+#include "../../mmio.h"
 
 #include <stddef.h>
 
 static acpi_table_mcfg_entry_t *g_mcfg_entry = NULL;
+static uint64_t g_ecam_base_address = 0;
 
 uint64_t pcie_ecam_address(uint32_t bus, uint32_t device, uint32_t function, uint32_t offset) {
-    // TODO: Do we need the start number subtracted from the bus number? Or is this a LLM hallucination?
-    return g_mcfg_entry->base_address + ((bus - g_mcfg_entry->start_bus_number) << 20) + (device << 15) + (function << 12) + offset;
+    return g_ecam_base_address + ((bus - g_mcfg_entry->start_bus_number) << 20) + (device << 15) + (function << 12) + offset;
 }
 
 int pcie_init(acpi_table_mcfg_entry_t *mcfg_entry) {
     g_mcfg_entry = mcfg_entry;
-    return 0;
+
+    uint64_t bus_count = g_mcfg_entry->end_bus_number - g_mcfg_entry->start_bus_number + 1;
+    uint64_t ecam_size = bus_count << 20;
+    return mmio_map_region(g_mcfg_entry->base_address, ecam_size, &g_ecam_base_address);
 }
 
 uint8_t pcie_config_read8(uint32_t bus, uint32_t device, uint32_t function, uint32_t offset) {

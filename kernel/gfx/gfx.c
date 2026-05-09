@@ -6,8 +6,12 @@
 #include "../memory.h"
 #include "../console.h"
 #include "../kmalloc.h"
+#include "../mmap.h"
 
 #include "font.h"
+
+#define GFX_VIRTUAL_BASE_ADDRESS 0xFFFF400000000000ULL
+#define GFX_PAGE_FLAGS PAGE_FLAG_EL1_RW | PAGE_FLAG_NX | PAGE_FLAG_NORMAL_MEMORY_NC | PAGE_FLAG_INNER_SHARABLE | PAGE_FLAG_ACCESS
 
 typedef struct gfx_t {
     uint32_t *framebuffer;       // Pointer to the framebuffer.
@@ -26,7 +30,18 @@ int gfx_init(boot_info_t *boot_info) {
         return -1;
     }
 
-    g_gfx.framebuffer = boot_info->framebuffer;
+    // Map the physical framebuffer to the virtual address space.
+    g_gfx.framebuffer = (uint32_t *)GFX_VIRTUAL_BASE_ADDRESS;
+    if (mmap_map_range(
+        GFX_VIRTUAL_BASE_ADDRESS,
+        GFX_VIRTUAL_BASE_ADDRESS + boot_info->framebuffer_size * sizeof(uint32_t),
+        (uint64_t)boot_info->framebuffer,
+        GFX_PAGE_FLAGS
+    ) < 0) {
+        console_write("Failed to map framebuffer\r\n");
+        return -1;
+    }
+
     g_gfx.framebuffer_size = boot_info->framebuffer_size;
     g_gfx.framebuffer_width = boot_info->framebuffer_width;
     g_gfx.framebuffer_stride = boot_info->framebuffer_stride;

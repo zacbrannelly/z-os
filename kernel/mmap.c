@@ -3,8 +3,14 @@
 #include "format.h"
 #include "console.h"
 #include "math.h"
+#include "memory.h"
+#include "assert.h"
 
 #include <stddef.h>
+
+#define MMAP_VIRTUAL_BASE_ADDRESS 0xFFFF500000000000ULL
+#define MMAP_PHYSICAL_REGION_SIZE (1ULL << 34) // 16GB
+#define MMAP_PAGE_FLAGS PAGE_FLAG_EL1_RW | PAGE_FLAG_NX | PAGE_FLAG_NORMAL_MEMORY | PAGE_FLAG_INNER_SHARABLE | PAGE_FLAG_ACCESS
 
 // G = Gathering, R = Reordering, E = Early Write Acknowledgement
 #define MAIR_ATTR_DEVICE_MEMORY_MASK 0xF3ULL // 0b11110011
@@ -49,6 +55,7 @@
 
 static uint64_t* g_ttbr0_table = NULL;
 static uint64_t* g_ttbr1_table = NULL;
+static uint8_t g_mmap_initialized = 0;
 
 // Simple bump allocator for the page tables, we'll use PAGE_TABLE_RESERVED_SIZE bytes of memory for it.
 static bump_allocator_t g_page_table_allocator;
@@ -203,6 +210,11 @@ static void print_ttbr0_table(void) {
 
     uint64_t ttbr0 = read_ttbr0();
     uint64_t *root = (uint64_t *)(ttbr0 & PTE_ADDR_MASK);
+
+    // Map the physical table to virtual address space.
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)root, (uint64_t *)&root) == 0);
+    }
 
     console_write("TTBR0: ");
     console_write_hex(ttbr0);
@@ -429,20 +441,23 @@ static int alloc_new_table(uint64_t **new_table) {
         return -1;
     }
 
-    uint64_t new_page_table_address = 0;
-    if (bump_allocator_allocate(&g_page_table_allocator, MMAP_GRANULE_SIZE, &new_page_table_address) < 0) {
+    uint64_t new_page_table_physical_addr = 0;
+    if (bump_allocator_allocate(&g_page_table_allocator, MMAP_GRANULE_SIZE, &new_page_table_physical_addr) < 0) {
         console_write("Unable to allocate new TTBR0 table, no pages left in the reserved page table memory\r\n");
         return -1;
     }
 
-    // Zero the new table.
-    uint64_t *new_page_table_base_addr = (uint64_t *)new_page_table_address;
-    for (int i = 0; i < MMAP_GRANULE_SIZE / sizeof(uint64_t); i++) {
-        new_page_table_base_addr[i] = 0;
+    // If the mmap system is already initialized, we need to convert the physical address to a virtual address.
+    if (g_mmap_initialized) {
+        uint64_t new_page_table_virtual_addr = 0;
+        assert(mmap_physical_to_virtual(new_page_table_physical_addr, &new_page_table_virtual_addr) == 0);
+        memory_set((void *)new_page_table_virtual_addr, 0, MMAP_GRANULE_SIZE);
+    } else {
+        memory_set((void *)new_page_table_physical_addr, 0, MMAP_GRANULE_SIZE);
     }
 
     // Set the new table pointer.
-    *new_table = new_page_table_base_addr;
+    *new_table = (uint64_t *)new_page_table_physical_addr;
     return 0;
 }
 
@@ -451,6 +466,8 @@ static int mmap_reserve_memory(
     uint64_t efi_memory_map_size,
     uint64_t efi_memory_map_descriptor_size
 ) {
+    assert(g_mmap_initialized == 0);
+
     // Set the bump allocators to invalid.
     bump_allocator_make_invalid(&g_kernel_memory_map_allocator);
     bump_allocator_make_invalid(&g_page_table_allocator);
@@ -520,6 +537,8 @@ static int mmap_new_memory_map_entry(
     mmap_memory_type_t type,
     mmap_memory_descriptor_t **out_new_entry
 ) {
+    assert(g_mmap_initialized == 0);
+
     uint64_t new_entry_address = 0;
     if (bump_allocator_allocate(&g_kernel_memory_map_allocator, sizeof(mmap_memory_descriptor_t), &new_entry_address) < 0) {
         console_write("Failed to allocate new memory map entry\r\n");
@@ -541,6 +560,8 @@ static int mmap_build_memory_map(
     uint64_t efi_memory_map_size,
     uint64_t efi_memory_map_descriptor_size
 ) {
+    assert(g_mmap_initialized == 0);
+
     for (int i = 0; i < efi_memory_map_size; i += efi_memory_map_descriptor_size) {
         efi_memory_descriptor_t *descriptor = (efi_memory_descriptor_t *)((uint64_t)efi_memory_map + i);
         uint64_t memory_start = descriptor->physical_start_address;
@@ -613,76 +634,23 @@ int mmap_get_memory_map(
         return -1;
     }
 
-    *out_memory_map = (mmap_memory_descriptor_t *)g_kernel_memory_map_allocator.memory_start;
+    if (g_mmap_initialized) {
+        // Map the physical memory map to virtual address space.
+        assert(mmap_physical_to_virtual(g_kernel_memory_map_allocator.memory_start, (uint64_t *)out_memory_map) == 0);
+    } else {
+        // Still return just the physical address, as the mmap system is not initialized yet.
+        *out_memory_map = (mmap_memory_descriptor_t *)g_kernel_memory_map_allocator.memory_start;
+    }
+
     *out_memory_map_count = g_kernel_memory_map_count;
     return 0;
 }
 
 int mmap_build_ttbr0_table() {
+    assert(g_mmap_initialized == 0);
+
     // Allocate the root table (first 512 entries).
     if (alloc_new_table(&g_ttbr0_table) < 0) {
-        return -1;
-    }
-
-    // TODO: This should be mapped by the device driver instead of mmap directly.
-    // NOTE: The PL011 UART is within this range!!!!!!
-    // VA 0x4000000 - 0x3effffff  -> PA 0x4000000  RW EL1 NX DEVICE-nGnRnE NON-SH AF 
-    if (mmap_map_range_l2_block(
-        0x4000000,
-        0x3effffff,
-        0x4000000,
-        PAGE_FLAG_EL1_RW |
-        PAGE_FLAG_NX |
-        PAGE_FLAG_DEVICE_MEMORY |
-        PAGE_FLAG_NON_SHARABLE |
-        PAGE_FLAG_ACCESS
-    ) < 0) {
-        return -1;
-    }
-
-    // NOTE: PCIe ECAM/MMCONFIG is within this range!!!!!!
-    // TODO: This should be mapped by the pcie device driver instead of mmap directly.
-    // VA 0x4010000000 - 0x401fffffff  -> PA 0x4010000000  RW EL1 NX DEVICE-nGnRnE NON-SH AF 
-    if (mmap_map_range_l2_block(
-        0x4010000000,
-        0x401fffffff,
-        0x4010000000,
-        PAGE_FLAG_EL1_RW |
-        PAGE_FLAG_NX |
-        PAGE_FLAG_DEVICE_MEMORY |
-        PAGE_FLAG_NON_SHARABLE |
-        PAGE_FLAG_ACCESS
-    ) < 0) {
-        return -1;
-    }
-
-    // NOTE: xHCI is within this range!!!!!!
-    // TODO: This should be mapped by the device driver instead of mmap directly.
-    // VA 0x8000000000 - 0xffffffffff  -> PA 0x8000000000  RW EL1 NX DEVICE-nGnRnE NON-SH AF 
-    if (mmap_map_range_l1_block(
-        0x8000000000,
-        0xffffffffff,
-        0x8000000000,
-        PAGE_FLAG_EL1_RW |
-        PAGE_FLAG_NX |
-        PAGE_FLAG_DEVICE_MEMORY |
-        PAGE_FLAG_NON_SHARABLE |
-        PAGE_FLAG_ACCESS
-    ) < 0) {
-        return -1;
-    }
-
-    // TODO: Build this range from the memory map.
-    // VA 0x40000000 - 0x7fffffff -> PA 0x40000000  RW EL1 X NORMAL-WB INNER-SH AF 
-    if (mmap_map_range(
-        0x40000000,
-        0x7fffffff,
-        0x40000000,
-        PAGE_FLAG_EL1_RW |
-        PAGE_FLAG_NORMAL_MEMORY |
-        PAGE_FLAG_INNER_SHARABLE |
-        PAGE_FLAG_ACCESS
-    ) < 0) {
         return -1;
     }
 
@@ -690,6 +658,8 @@ int mmap_build_ttbr0_table() {
 }
 
 static int recursive_copy_table(uint64_t *src_table, uint64_t **out_table, int level) {
+    assert(g_mmap_initialized == 0);
+
     uint64_t *dst_table = NULL;
     if (alloc_new_table(&dst_table) < 0) {
         return -1;
@@ -727,11 +697,34 @@ static int recursive_copy_table(uint64_t *src_table, uint64_t **out_table, int l
 }
 
 int mmap_build_ttbr1_table() {
+    assert(g_mmap_initialized == 0);
+
     // Copy the existing TTBR1 table to the kernel's translation table.
     // This table was created by our OS loader, so we can trust it to be valid.
     uint64_t ttbr1 = read_ttbr1();
     uint64_t *root = (uint64_t *)(ttbr1 & TBL_ENTRY_ADDR_MASK);
-    return recursive_copy_table(root, &g_ttbr1_table, 0);
+    int result = recursive_copy_table(root, &g_ttbr1_table, 0);
+    if (result < 0) {
+        console_write("Failed to copy TTBR1 table\r\n");
+        return -1;
+    }
+
+    // Map physical space to kernel's virtual address space.
+    if (mmap_map_range_l1_block(
+        MMAP_VIRTUAL_BASE_ADDRESS,
+        MMAP_VIRTUAL_BASE_ADDRESS + MMAP_PHYSICAL_REGION_SIZE,
+        0x0ULL,
+        PAGE_FLAG_EL1_RW |
+        PAGE_FLAG_NX |
+        PAGE_FLAG_NORMAL_MEMORY |
+        PAGE_FLAG_INNER_SHARABLE |
+        PAGE_FLAG_ACCESS
+    ) < 0) {
+        console_write("Failed to map physical space to kernel's virtual address space\r\n");
+        return -1;
+    }
+
+    return 0;
 }
 
 static int mmap_apply_ttbr0_table() {
@@ -851,16 +844,19 @@ int mmap_init(
         return -1;
     }
 
+    g_mmap_initialized = 1;
+
+    return 0;
+}
+
+void mmap_debug_print(
+    efi_memory_descriptor_t *efi_memory_map,
+    uint64_t efi_memory_map_size,
+    uint64_t efi_memory_map_descriptor_size
+) {
     efi_memory_map_print_details(efi_memory_map, efi_memory_map_size, efi_memory_map_descriptor_size);
     print_current_mair_attributes();
     print_ttbr0_table();
-
-    uint64_t tcr = read_tcr();
-    console_write("TCR: ");
-    console_write_hex(tcr);
-    console_write("\r\n");
-
-    return 0;
 }
 
 // Maps 1GB block of virtual addresses to a 1GB block of physical addresses.
@@ -894,6 +890,11 @@ int mmap_map_l1_block(
     }
 
     uint64_t *ttbr_table = *ttbr_table_ptr;
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
+    }
+
     uint64_t l0_entry = ttbr_table[l0_index];
     if ((l0_entry & TBL_ENTRY_VALID) == 0) {
         uint64_t *new_table = NULL;
@@ -915,6 +916,11 @@ int mmap_map_l1_block(
     }
 
     uint64_t *l1_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
+    }
+
     uint64_t l1_entry = l1_page_table[l1_index];
     if ((l1_entry & TBL_ENTRY_VALID) == 0) {
         l1_page_table[l1_index] = (
@@ -989,6 +995,11 @@ int mmap_map_l2_block(
     }
 
     uint64_t *ttbr_table = *ttbr_table_ptr;
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
+    }
+
     uint64_t l0_entry = ttbr_table[l0_index];
     if ((l0_entry & TBL_ENTRY_VALID) == 0) {
         uint64_t *new_table = NULL;
@@ -1010,6 +1021,11 @@ int mmap_map_l2_block(
     }
 
     uint64_t *l1_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
+    }
+
     uint64_t l1_entry = l1_page_table[l1_index];
     if ((l1_entry & TBL_ENTRY_VALID) == 0) {
         uint64_t *new_table = NULL;
@@ -1030,6 +1046,11 @@ int mmap_map_l2_block(
     }
 
     uint64_t *l2_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l2_page_table, (uint64_t *)&l2_page_table) == 0);
+    }
+
     uint64_t l2_entry = l2_page_table[l2_index];
     if ((l2_entry & TBL_ENTRY_VALID) == 0) {
         l2_page_table[l2_index] = (
@@ -1124,6 +1145,11 @@ int mmap_map_page(
     }
 
     uint64_t *ttbr_table = *ttbr_table_ptr;
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
+    }
+
     uint64_t l0_entry = ttbr_table[l0_index];
     if ((l0_entry & TBL_ENTRY_VALID) == 0) {
         uint64_t *new_table = NULL;
@@ -1140,6 +1166,11 @@ int mmap_map_page(
     }
     
     uint64_t *l0_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l0_page_table, (uint64_t *)&l0_page_table) == 0);
+    }
+
     uint64_t l1_entry = l0_page_table[l1_index];
     if ((l1_entry & TBL_ENTRY_VALID) == 0) {
         uint64_t *new_table = NULL;
@@ -1156,6 +1187,11 @@ int mmap_map_page(
     }
 
     uint64_t *l1_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
+    }
+
     uint64_t l2_entry = l1_page_table[l2_index];
     if ((l2_entry & TBL_ENTRY_VALID) == 0) {
         uint64_t *new_table = NULL;
@@ -1172,6 +1208,11 @@ int mmap_map_page(
     }
 
     uint64_t *l2_page_table = (uint64_t *)(l2_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l2_page_table, (uint64_t *)&l2_page_table) == 0);
+    }
+
     l2_page_table[l3_index] = (
         TBL_ENTRY_VALID |
         TBL_ENTRY_TABLE |
@@ -1180,6 +1221,19 @@ int mmap_map_page(
         (physical_address & TBL_ENTRY_ADDR_MASK)
     );
 
+    return 0;
+}
+
+int mmap_physical_to_virtual(
+    uint64_t physical_address,
+    uint64_t *virtual_address
+) {
+    if (physical_address < 0x0ULL || physical_address >= MMAP_PHYSICAL_REGION_SIZE) {
+        console_write("Physical address is out of range\r\n");
+        return -1;
+    }
+
+    *virtual_address = MMAP_VIRTUAL_BASE_ADDRESS + physical_address;
     return 0;
 }
 
@@ -1198,12 +1252,21 @@ int mmap_virtual_to_physical(
     uint64_t l2_index = (virtual_address >> 21) & 0x1FF;
     uint64_t l3_index = (virtual_address >> 12) & 0x1FF;
 
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
+    }
+
     uint64_t l0_entry = ttbr_table[l0_index];
     if ((l0_entry & TBL_ENTRY_VALID) == 0) {
         return -1;
     }
 
     uint64_t *l0_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l0_page_table, (uint64_t *)&l0_page_table) == 0);
+    }
+
     uint64_t l1_entry = l0_page_table[l1_index];
     if ((l1_entry & TBL_ENTRY_VALID) == 0) {
         return -1;
@@ -1216,6 +1279,11 @@ int mmap_virtual_to_physical(
     }
 
     uint64_t *l1_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
+    }
+
     uint64_t l2_entry = l1_page_table[l2_index];
     if ((l2_entry & TBL_ENTRY_VALID) == 0) {
         return -1;
@@ -1228,6 +1296,11 @@ int mmap_virtual_to_physical(
     }
 
     uint64_t *l2_page_table = (uint64_t *)(l2_entry & TBL_ENTRY_ADDR_MASK);
+
+    if (g_mmap_initialized) {
+        assert(mmap_physical_to_virtual((uint64_t)l2_page_table, (uint64_t *)&l2_page_table) == 0);
+    }
+
     uint64_t l3_entry = l2_page_table[l3_index];
     if ((l3_entry & TBL_ENTRY_VALID) == 0) {
         return -1;

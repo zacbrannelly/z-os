@@ -68,6 +68,11 @@ int mmap_virtual_to_physical(
     uint64_t *physical_address
 );
 
+int mmap_physical_to_virtual(
+    uint64_t physical_address,
+    uint64_t *virtual_address
+);
+
 // Maps a range of L2 blocks (2MiB each)
 int mmap_map_range_l2_block(
     uint64_t virtual_start_address,
@@ -108,4 +113,10 @@ int mmap_map_page(
     uint64_t physical_address,
     uint64_t virtual_address,
     uint64_t page_flags
+);
+
+void mmap_debug_print(
+    efi_memory_descriptor_t *efi_memory_map,
+    uint64_t efi_memory_map_size,
+    uint64_t efi_memory_map_descriptor_size
 );
