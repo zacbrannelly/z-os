@@ -5,6 +5,7 @@
 #include "math.h"
 #include "memory.h"
 #include "assert.h"
+#include "vmap.h"
 
 #include <stddef.h>
 
@@ -41,18 +42,6 @@
 
 #define MAIR_ATTR(reg, index) ((reg >> ((index) * 8)) & 0xFFULL)
 
-#define TCR_TTBR0_ENABLE_FLAG ~(1ULL << 7)     // EPD0 flag must be clear to enable TTBR0 translations.
-#define TCR_TTBR0_4KB_GRANULE_FLAG (0ULL << 15)      // TG0 bits must be set to 0x0 to indicate 4kb granule size.
-#define TCR_TTBR0_CLEAR_GRANULE_FLAG ~(0x3ULL << 14) // TG0 bits must be cleared to set the desired value.
-#define TCR_TTBR0_SET_T1SZ_16_FLAG (16ULL << 0)      // T0SZ bits must be set to 16 to indicate a 48 bit address space (64 - 16 = 48).
-#define TCR_TTBR0_CLEAR_T1SZ_FLAG ~(0x3FULL << 0)    // T0SZ bits must be cleared to set the desired value.
-
-#define TCR_TTBR1_ENABLE_FLAG ~(1ULL << 23)    // EPD1 flag must be clear to enable TTBR1 translations.
-#define TCR_TTBR1_4KB_GRANULE_FLAG (1ULL << 31)      // TG1 bits must be set to 0x2 to indicate 4kb granule size.
-#define TCR_TTBR1_CLEAR_GRANULE_FLAG ~(0x3ULL << 30) // TG1 bits must be cleared to set the desired value.
-#define TCR_TTBR1_SET_T1SZ_16_FLAG (16ULL << 16)     // T1SZ bits must be set to 16 to indicate a 48 bit address space (64 - 16 = 48).
-#define TCR_TTBR1_CLEAR_T1SZ_FLAG ~(0x3FULL << 16)   // T1SZ bits must be cleared to set the desired value.
-
 static uint64_t* g_ttbr0_table = NULL;
 static uint64_t* g_ttbr1_table = NULL;
 static uint8_t g_mmap_initialized = 0;
@@ -82,12 +71,6 @@ static uint64_t read_ttbr1(void) {
     uint64_t ttbr1 = 0;
     __asm__("mrs %0, ttbr1_el1" : "=r" (ttbr1));
     return ttbr1;
-}
-
-static uint64_t read_tcr(void) {
-    uint64_t tcr = 0;
-    __asm__("mrs %0, tcr_el1" : "=r" (tcr));
-    return tcr;
 }
 
 static uint64_t **get_ttbr_table_ptr(uint64_t virtual_address) {
@@ -192,247 +175,6 @@ static void print_current_mair_attributes(void) {
 
         console_write("\r\n");
     }
-}
-
-static void print_ttbr0_table(void) {
-    // TODO: QUICK AI SLOP TO RENDER THE TABLE, REFACTOR OR REMOVE THIS IN FUTURE.
-    #define PTE_VALID           (1ULL << 0)
-    #define PTE_TABLE_OR_PAGE   (1ULL << 1)
-    #define PTE_ADDR_MASK       0x0000FFFFFFFFF000ULL
-    #define ENTRIES             512ULL
-
-    typedef struct {
-        uint64_t *table;
-        int level;
-        uint64_t va_base;
-        uint64_t index;
-    } stack_entry_t;
-
-    uint64_t ttbr0 = read_ttbr0();
-    uint64_t *root = (uint64_t *)(ttbr0 & PTE_ADDR_MASK);
-
-    // Map the physical table to virtual address space.
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)root, (uint64_t *)&root) == 0);
-    }
-
-    console_write("TTBR0: ");
-    console_write_hex(ttbr0);
-    console_write("\r\n");
-
-    stack_entry_t stack[4];
-    int sp = 0;
-
-    stack[0].table = root;
-    stack[0].level = 0;
-    stack[0].va_base = 0;
-    stack[0].index = 0;
-
-    uint64_t current_va_start = 0;
-    uint64_t current_va_end   = 0; // exclusive
-    uint64_t current_pa_start = 0;
-    uint64_t current_attrs    = 0;
-    int have_current = 0;
-
-    while (sp >= 0) {
-        if (stack[sp].index >= ENTRIES) {
-            sp--;
-            continue;
-        }
-
-        uint64_t i       = stack[sp].index++;
-        int level        = stack[sp].level;
-        uint64_t *table  = stack[sp].table;
-        uint64_t va_base = stack[sp].va_base;
-        uint64_t pte     = table[i];
-
-        if ((pte & PTE_VALID) == 0) {
-            continue;
-        }
-
-        uint64_t span;
-        switch (level) {
-            case 0: span = 512ULL * 1024 * 1024 * 1024; break;
-            case 1: span =   1ULL * 1024 * 1024 * 1024; break;
-            case 2: span =   2ULL * 1024 * 1024; break;
-            case 3: span =   4ULL * 1024; break;
-            default: span = 0; break;
-        }
-
-        uint64_t entry_va = va_base + i * span;
-
-        // L0/L1/L2: bit1=1 => next-level table
-        // L3: bit1=1 => page mapping
-        if (level < 3 && (pte & PTE_TABLE_OR_PAGE)) {
-            sp++;
-            stack[sp].table = (uint64_t *)(pte & PTE_ADDR_MASK);
-            stack[sp].level = level + 1;
-            stack[sp].va_base = entry_va;
-            stack[sp].index = 0;
-            continue;
-        }
-
-        uint64_t pa = pte & PTE_ADDR_MASK;
-
-        // Merge signature
-        uint64_t attrs =
-            (((pte >> 2)  & 0x7)  << 0) |   // AttrIndx
-            (((pte >> 6)  & 0x3)  << 3) |   // AP
-            (((pte >> 8)  & 0x3)  << 5) |   // SH
-            (((pte >> 10) & 0x1)  << 7) |   // AF
-            (((pte >> 53) & 0x1)  << 8) |   // PXN
-            (((pte >> 54) & 0x1)  << 9);    // UXN
-
-        if (!have_current) {
-            current_va_start = entry_va;
-            current_va_end   = entry_va + span;
-            current_pa_start = pa;
-            current_attrs    = attrs;
-            have_current = 1;
-            continue;
-        }
-
-        uint64_t current_pa_end = current_pa_start + (current_va_end - current_va_start);
-
-        if (current_va_end == entry_va &&
-            current_pa_end == pa &&
-            current_attrs == attrs) {
-            current_va_end += span;
-            continue;
-        }
-
-        {
-            uint64_t attrindx = (current_attrs >> 0) & 0x7;
-            uint64_t ap       = (current_attrs >> 3) & 0x3;
-            uint64_t sh       = (current_attrs >> 5) & 0x3;
-            uint64_t af       = (current_attrs >> 7) & 0x1;
-            uint64_t pxn      = (current_attrs >> 8) & 0x1;
-            uint64_t uxn      = (current_attrs >> 9) & 0x1;
-
-            console_write("VA ");
-            console_write_hex(current_va_start);
-            console_write(" - ");
-            console_write_hex(current_va_end - 1);
-            console_write("  -> PA ");
-            console_write_hex(current_pa_start);
-            console_write("  ");
-
-            switch (ap) {
-                case 0: console_write("RW EL1 "); break;
-                case 1: console_write("RW EL0 "); break;
-                case 2: console_write("RO EL1 "); break;
-                case 3: console_write("RO EL0 "); break;
-                default: console_write("AP? "); break;
-            }
-
-            if (pxn && uxn) {
-                console_write("NX ");
-            } else if (!pxn && !uxn) {
-                console_write("X ");
-            } else {
-                if (pxn) console_write("PXN ");
-                if (uxn) console_write("UXN ");
-            }
-
-            switch (attrindx) {
-                case 0: console_write("DEVICE-nGnRnE "); break;
-                case 1: console_write("NORMAL-NC "); break;
-                case 2: console_write("NORMAL-WT "); break;
-                case 3: console_write("NORMAL-WB "); break;
-                default:
-                    console_write("ATTRIDX=");
-                    console_write_hex(attrindx);
-                    console_write(" ");
-                    break;
-            }
-
-            switch (sh) {
-                case 0: console_write("NON-SH "); break;
-                case 2: console_write("OUTER-SH "); break;
-                case 3: console_write("INNER-SH "); break;
-                default: console_write("SH? "); break;
-            }
-
-            if (af) {
-                console_write("AF ");
-            } else {
-                console_write("!AF ");
-            }
-
-            console_write("\r\n");
-        }
-
-        current_va_start = entry_va;
-        current_va_end   = entry_va + span;
-        current_pa_start = pa;
-        current_attrs    = attrs;
-    }
-
-    if (have_current) {
-        uint64_t attrindx = (current_attrs >> 0) & 0x7;
-        uint64_t ap       = (current_attrs >> 3) & 0x3;
-        uint64_t sh       = (current_attrs >> 5) & 0x3;
-        uint64_t af       = (current_attrs >> 7) & 0x1;
-        uint64_t pxn      = (current_attrs >> 8) & 0x1;
-        uint64_t uxn      = (current_attrs >> 9) & 0x1;
-
-        console_write("VA ");
-        console_write_hex(current_va_start);
-        console_write(" - ");
-        console_write_hex(current_va_end - 1);
-        console_write("  -> PA ");
-        console_write_hex(current_pa_start);
-        console_write("  ");
-
-        switch (ap) {
-            case 0: console_write("RW EL1 "); break;
-            case 1: console_write("RW EL0 "); break;
-            case 2: console_write("RO EL1 "); break;
-            case 3: console_write("RO EL0 "); break;
-            default: console_write("AP? "); break;
-        }
-
-        if (pxn && uxn) {
-            console_write("NX ");
-        } else if (!pxn && !uxn) {
-            console_write("X ");
-        } else {
-            if (pxn) console_write("PXN ");
-            if (uxn) console_write("UXN ");
-        }
-
-        switch (attrindx) {
-            case 0: console_write("DEVICE-nGnRnE "); break;
-            case 1: console_write("NORMAL-NC "); break;
-            case 2: console_write("NORMAL-WT "); break;
-            case 3: console_write("NORMAL-WB "); break;
-            default:
-                console_write("ATTRIDX=");
-                console_write_hex(attrindx);
-                console_write(" ");
-                break;
-        }
-
-        switch (sh) {
-            case 0: console_write("NON-SH "); break;
-            case 2: console_write("OUTER-SH "); break;
-            case 3: console_write("INNER-SH "); break;
-            default: console_write("SH? "); break;
-        }
-
-        if (af) {
-            console_write("AF ");
-        } else {
-            console_write("!AF ");
-        }
-
-        console_write("\r\n");
-    }
-
-    #undef PTE_VALID
-    #undef PTE_TABLE_OR_PAGE
-    #undef PTE_ADDR_MASK
-    #undef ENTRIES
 }
 
 static int alloc_new_table(uint64_t **new_table) {
@@ -727,83 +469,49 @@ int mmap_build_ttbr1_table() {
     return 0;
 }
 
-static int mmap_apply_ttbr0_table() {
-    uint64_t ttbr0 = (uint64_t)g_ttbr0_table & TBL_ENTRY_ADDR_MASK;
-    uint64_t tcr = read_tcr();
-
-    // Clear the EPD0 flag to enable TTBR0 translations.
-    tcr &= TCR_TTBR0_ENABLE_FLAG;
-
-    // Set the TG0 bits to 0x0 to indicate 4kb granule size.
-    tcr &= TCR_TTBR0_CLEAR_GRANULE_FLAG;
-    tcr |= TCR_TTBR0_4KB_GRANULE_FLAG;
-    
-    // Set the T0SZ bits to 16 to indicate a 48 bit address space (64 - 16 = 48).
-    tcr &= TCR_TTBR0_CLEAR_T1SZ_FLAG;
-    tcr |= TCR_TTBR0_SET_T1SZ_16_FLAG;
-
-    // Make sure all table writes hit memory before the CPU can walk them.
-    __asm__ volatile("dsb ishst" ::: "memory");
-    __asm__ volatile("isb");
-    
-    // Program the translation controls first.
-    __asm__ volatile("msr tcr_el1, %0" :: "r"(tcr) : "memory");
-    __asm__ volatile("isb");
-    
-    // Install the new TTBR0 root.
-    __asm__ volatile("msr ttbr0_el1, %0" :: "r"(ttbr0) : "memory");
-    __asm__ volatile("isb");
-    
-    return 0;
+static uint64_t alloc_vmap_page(void) {
+    uint64_t *page;
+    if (alloc_new_table(&page) < 0) {
+        return 0;
+    }
+    return (uint64_t)page;
 }
 
-static int mmap_apply_ttbr1_table() {
-    uint64_t ttbr1 = (uint64_t)g_ttbr1_table & TBL_ENTRY_ADDR_MASK;
-    uint64_t tcr = read_tcr();
+static uint64_t vmap_physical_to_virtual(uint64_t physical_address) {
+    uint64_t virtual_address;
+    if (mmap_physical_to_virtual(physical_address, &virtual_address) < 0) {
+        return 0;
+    }
+    return virtual_address;
+}
 
-    // Clear the EPD1 bit to enable TTBR1 translations.
-    tcr &= TCR_TTBR1_ENABLE_FLAG;
-
-    // Set the TG1 bits to 0x2 to indicate 4kb granule size.
-    tcr &= TCR_TTBR1_CLEAR_GRANULE_FLAG;
-    tcr |= TCR_TTBR1_4KB_GRANULE_FLAG;
-
-    // Set the T1SZ bits to 16 to indicate a 48 bit address space (64 - 16 = 48).
-    tcr &= TCR_TTBR1_CLEAR_T1SZ_FLAG;
-    tcr |= TCR_TTBR1_SET_T1SZ_16_FLAG;
-
-    // Make sure all table writes hit memory before the CPU can walk them.
-    __asm__ volatile("dsb ishst" ::: "memory");
-    __asm__ volatile("isb");
-  
-    // Program the translation controls first.
-    __asm__ volatile("msr tcr_el1, %0" :: "r"(tcr) : "memory");
-    __asm__ volatile("isb");
-  
-    // Install the new TTBR1 root.
-    __asm__ volatile("msr ttbr1_el1, %0" :: "r"(ttbr1) : "memory");
-    __asm__ volatile("isb");
-
+static int build_vmap_table(uint64_t **ttbr_table_ptr, vmap_t *vmap) {
+    uint64_t *ttbr_table = *ttbr_table_ptr;
+    if (vmap_init(vmap, alloc_vmap_page, vmap_physical_to_virtual) < 0) {
+        return -1;
+    }
+    vmap->root_page_table = (uint64_t)ttbr_table;
     return 0;
 }
 
 int mmap_apply_mappings(void) {
-    // Apply the TTBR0 table.
-    if (mmap_apply_ttbr0_table() < 0) {
-        console_write("Failed to apply TTBR0 table\r\n");
+    vmap_t ttbr0_vmap;
+    if (vmap_init(&ttbr0_vmap, alloc_vmap_page, vmap_physical_to_virtual) < 0) {
+        return -1;
+    }
+    ttbr0_vmap.root_page_table = (uint64_t)g_ttbr0_table;
+    if (vmap_apply_table(&ttbr0_vmap, VMAP_DESTINATION_USER) < 0) {
         return -1;
     }
 
-    // Apply the TTBR1 table.
-    if (mmap_apply_ttbr1_table() < 0) {
-        console_write("Failed to apply TTBR1 table\r\n");
+    vmap_t ttbr1_vmap;
+    if (vmap_init(&ttbr1_vmap, alloc_vmap_page, vmap_physical_to_virtual) < 0) {
         return -1;
     }
-
-    // Invalidate stale EL1 stage-1 translations.
-    __asm__ volatile("tlbi vmalle1");
-    __asm__ volatile("dsb ish");
-    __asm__ volatile("isb");
+    ttbr1_vmap.root_page_table = (uint64_t)g_ttbr1_table;
+    if (vmap_apply_table(&ttbr1_vmap, VMAP_DESTINATION_KERNEL) < 0) {
+        return -1;
+    }
 
     return 0;
 }
@@ -856,85 +564,29 @@ void mmap_debug_print(
 ) {
     efi_memory_map_print_details(efi_memory_map, efi_memory_map_size, efi_memory_map_descriptor_size);
     print_current_mair_attributes();
-    print_ttbr0_table();
 }
 
-// Maps 1GB block of virtual addresses to a 1GB block of physical addresses.
 int mmap_map_l1_block(
     uint64_t virtual_address,
     uint64_t physical_address,
     uint64_t page_flags
 ) {
-    if (virtual_address % TBL_L1_BLOCK_SIZE != 0) {
-        console_write("Virtual address is not aligned to 1GB\r\n");
-        return -1;
-    }
-
-    if (physical_address % TBL_L1_BLOCK_SIZE != 0) {
-        console_write("Physical address is not aligned to 1GB\r\n");
-        return -1;
-    }
-
-    uint64_t l0_index = (virtual_address >> 39) & 0x1FF;
-    uint64_t l1_index = (virtual_address >> 30) & 0x1FF;
-
     uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_address);
+
+    vmap_t vmap;
+    if (build_vmap_table(ttbr_table_ptr, &vmap) < 0) {
+        return -1;
+    }
+
+    if (vmap_map_l1_block(&vmap, virtual_address, physical_address, page_flags) < 0) {
+        return -1;
+    }
+
     if (*ttbr_table_ptr == NULL) {
-        // Allocate the table.
-        if (alloc_new_table(ttbr_table_ptr) < 0) {
-            console_write("Failed to allocate new TTBR table for virtual address ");
-            console_write_hex(virtual_address);
-            console_write("\r\n");
-            return -1;
-        }
+        *ttbr_table_ptr = (uint64_t*)vmap.root_page_table;
     }
 
-    uint64_t *ttbr_table = *ttbr_table_ptr;
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
-    }
-
-    uint64_t l0_entry = ttbr_table[l0_index];
-    if ((l0_entry & TBL_ENTRY_VALID) == 0) {
-        uint64_t *new_table = NULL;
-        if (alloc_new_table(&new_table) < 0) {
-            return -1;
-        }
-
-        ttbr_table[l0_index] = (
-            TBL_ENTRY_VALID |
-            TBL_ENTRY_TABLE |
-            ((uint64_t)new_table & TBL_ENTRY_ADDR_MASK)
-        );
-        l0_entry = ttbr_table[l0_index];
-    }
-
-    if ((l0_entry & TBL_ENTRY_TABLE) == 0) {
-        // Something is already mapped here, so we can't map.
-        return -1;
-    }
-
-    uint64_t *l1_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
-    }
-
-    uint64_t l1_entry = l1_page_table[l1_index];
-    if ((l1_entry & TBL_ENTRY_VALID) == 0) {
-        l1_page_table[l1_index] = (
-            TBL_ENTRY_VALID | 
-            TBL_ENTRY_BLOCK |
-            PAGE_FLAG_ACCESS |
-            page_flags |
-            (physical_address & TBL_ENTRY_L1_BLOCK_ADDR_MASK)
-        );
-        return 0;
-    } else {
-        // Somrthing is already mapped here, so we can't map.
-        return -1;
-    }
+    return 0;
 }
 
 int mmap_map_range_l1_block(
@@ -943,25 +595,25 @@ int mmap_map_range_l1_block(
     uint64_t physical_start_address,
     uint64_t page_flags
 ) {
-    if (physical_start_address % TBL_L1_BLOCK_SIZE != 0) {
-        console_write("Physical address is not aligned to 1GB\r\n");
+    uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_start_address);
+
+    vmap_t vmap;
+    if (build_vmap_table(ttbr_table_ptr, &vmap) < 0) {
         return -1;
     }
 
-    if (virtual_start_address % TBL_L1_BLOCK_SIZE != 0) {
-        console_write("Virtual address is not aligned to 1GB\r\n");
+    if (vmap_map_range_l1_block(
+        &vmap,
+        virtual_start_address,
+        virtual_end_address,
+        physical_start_address,
+        page_flags
+    ) < 0) {
         return -1;
     }
 
-    for (
-        uint64_t virtual_address = virtual_start_address;
-        virtual_address < virtual_end_address;
-        virtual_address += TBL_L1_BLOCK_SIZE,
-        physical_start_address += TBL_L1_BLOCK_SIZE
-    ) {
-        if (mmap_map_l1_block(virtual_address, physical_start_address, page_flags) < 0) {
-            return -1;
-        }
+    if (*ttbr_table_ptr == NULL) {
+        *ttbr_table_ptr = (uint64_t*)vmap.root_page_table;
     }
 
     return 0;
@@ -972,99 +624,27 @@ int mmap_map_l2_block(
     uint64_t physical_address,
     uint64_t page_flags
 ) {
-    if (virtual_address % TBL_L2_BLOCK_SIZE != 0) {
-        console_write("Virtual address is not aligned to 2MB\r\n");
-        return -1;
-    }
-
-    if (physical_address % TBL_L2_BLOCK_SIZE != 0) {
-        console_write("Physical address is not aligned to 2MB\r\n");
-        return -1;
-    }
-
-    uint64_t l0_index = (virtual_address >> 39) & 0x1FF;
-    uint64_t l1_index = (virtual_address >> 30) & 0x1FF;
-    uint64_t l2_index = (virtual_address >> 21) & 0x1FF;
-
     uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_address);
+
+    vmap_t vmap;
+    if (build_vmap_table(ttbr_table_ptr, &vmap) < 0) {
+        return -1;
+    }
+
+    if (vmap_map_l2_block(
+        &vmap,
+        virtual_address,
+        physical_address,
+        page_flags
+    ) < 0) {
+        return -1;
+    }
+
     if (*ttbr_table_ptr == NULL) {
-        // Allocate the table.
-        if (alloc_new_table(ttbr_table_ptr) < 0) {
-            return -1;
-        }
+        *ttbr_table_ptr = (uint64_t*)vmap.root_page_table;
     }
 
-    uint64_t *ttbr_table = *ttbr_table_ptr;
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
-    }
-
-    uint64_t l0_entry = ttbr_table[l0_index];
-    if ((l0_entry & TBL_ENTRY_VALID) == 0) {
-        uint64_t *new_table = NULL;
-        if (alloc_new_table(&new_table) < 0) {
-            return -1;
-        }
-
-        ttbr_table[l0_index] = (
-            TBL_ENTRY_VALID |
-            TBL_ENTRY_TABLE |
-            ((uint64_t)new_table & TBL_ENTRY_ADDR_MASK)
-        );
-        l0_entry = ttbr_table[l0_index];
-    }
-
-    if ((l0_entry & TBL_ENTRY_TABLE) == 0) {
-        // Something is already mapped here, so we can't map.
-        return -1;
-    }
-
-    uint64_t *l1_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
-    }
-
-    uint64_t l1_entry = l1_page_table[l1_index];
-    if ((l1_entry & TBL_ENTRY_VALID) == 0) {
-        uint64_t *new_table = NULL;
-        if (alloc_new_table(&new_table) < 0) {
-            return -1;
-        }
-        l1_page_table[l1_index] = (
-            TBL_ENTRY_VALID |
-            TBL_ENTRY_TABLE |
-            ((uint64_t)new_table & TBL_ENTRY_ADDR_MASK)
-        );
-        l1_entry = l1_page_table[l1_index];
-    }
-
-    if ((l1_entry & TBL_ENTRY_TABLE) == 0) {
-        // Something is already mapped here, so we can't map.
-        return -1;
-    }
-
-    uint64_t *l2_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l2_page_table, (uint64_t *)&l2_page_table) == 0);
-    }
-
-    uint64_t l2_entry = l2_page_table[l2_index];
-    if ((l2_entry & TBL_ENTRY_VALID) == 0) {
-        l2_page_table[l2_index] = (
-            TBL_ENTRY_VALID |
-            TBL_ENTRY_BLOCK |
-            PAGE_FLAG_ACCESS |
-            page_flags |
-            (physical_address & TBL_ENTRY_L2_BLOCK_ADDR_MASK)
-        );
-        return 0;
-    } else {
-        // Something is already mapped here, so we can't map.
-        return -1;
-    }
+    return 0;
 }
 
 int mmap_map_range_l2_block(
@@ -1073,25 +653,25 @@ int mmap_map_range_l2_block(
     uint64_t physical_start_address,
     uint64_t page_flags
 ) {
-    if (physical_start_address % TBL_L2_BLOCK_SIZE != 0) {
-        console_write("Physical address is not aligned to 2MB\r\n");
+    uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_start_address);
+
+    vmap_t vmap;
+    if (build_vmap_table(ttbr_table_ptr, &vmap) < 0) {
         return -1;
     }
 
-    if (virtual_start_address % TBL_L2_BLOCK_SIZE != 0) {
-        console_write("Virtual address is not aligned to 2MB\r\n");
+    if (vmap_map_range_l2_block(
+        &vmap,
+        virtual_start_address,
+        virtual_end_address,
+        physical_start_address,
+        page_flags
+    ) < 0) {
         return -1;
     }
 
-    for (
-        uint64_t virtual_address = virtual_start_address;
-        virtual_address < virtual_end_address;
-        virtual_address += TBL_L2_BLOCK_SIZE,
-        physical_start_address += TBL_L2_BLOCK_SIZE
-    ) {
-        if (mmap_map_l2_block(virtual_address, physical_start_address, page_flags) < 0) {
-            return -1;
-        }
+    if (*ttbr_table_ptr == NULL) {
+        *ttbr_table_ptr = (uint64_t*)vmap.root_page_table;
     }
 
     return 0;
@@ -1103,15 +683,25 @@ int mmap_map_range(
     uint64_t physical_start_address,
     uint64_t page_flags
 ) {
-    for (
-        uint64_t virtual_address = virtual_start_address;
-        virtual_address < virtual_end_address;
-        virtual_address += MMAP_GRANULE_SIZE,
-        physical_start_address += MMAP_GRANULE_SIZE
-    ) {
-        if (mmap_map_page(physical_start_address, virtual_address, page_flags) < 0) {
-            return -1;
-        }
+    uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_start_address);
+
+    vmap_t vmap;
+    if (build_vmap_table(ttbr_table_ptr, &vmap) < 0) {
+        return -1;
+    }
+
+    if (vmap_map_range(
+        &vmap,
+        virtual_start_address,
+        virtual_end_address,
+        physical_start_address,
+        page_flags
+    ) < 0) {
+        return -1;
+    }
+
+    if (*ttbr_table_ptr == NULL) {
+        *ttbr_table_ptr = (uint64_t*)vmap.root_page_table;
     }
 
     return 0;
@@ -1122,104 +712,26 @@ int mmap_map_page(
     uint64_t virtual_address,
     uint64_t page_flags
 ) {
-    // Extract level indices from the virtual address (48-bit address space).
-    // 47..39 = L0 index
-    // 38..30 = L1 index
-    // 29..21 = L2 index
-    // 20..12 = L3 index
-    // 11..0 = Offset
-    uint64_t l0_index = (virtual_address >> 39) & 0x1FF;
-    uint64_t l1_index = (virtual_address >> 30) & 0x1FF;
-    uint64_t l2_index = (virtual_address >> 21) & 0x1FF;
-    uint64_t l3_index = (virtual_address >> 12) & 0x1FF;
-
     uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_address);
-    if (*ttbr_table_ptr == NULL) {
-        // Allocate the table.
-        if (alloc_new_table(ttbr_table_ptr) < 0) {
-            console_write("Failed to allocate new TTBR table for virtual address ");
-            console_write_hex(virtual_address);
-            console_write("\r\n");
-            return -1;
-        }
-    }
 
-    uint64_t *ttbr_table = *ttbr_table_ptr;
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
-    }
-
-    uint64_t l0_entry = ttbr_table[l0_index];
-    if ((l0_entry & TBL_ENTRY_VALID) == 0) {
-        uint64_t *new_table = NULL;
-        if (alloc_new_table(&new_table) < 0) {
-            return -1;
-        }
-
-        ttbr_table[l0_index] = (
-            TBL_ENTRY_VALID |
-            TBL_ENTRY_TABLE |
-            ((uint64_t)new_table & TBL_ENTRY_ADDR_MASK)
-        );
-        l0_entry = ttbr_table[l0_index];
+    vmap_t vmap;
+    if (build_vmap_table(ttbr_table_ptr, &vmap) < 0) {
+        return -1;
     }
     
-    uint64_t *l0_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l0_page_table, (uint64_t *)&l0_page_table) == 0);
+    if (vmap_map_page(
+        &vmap,
+        physical_address,
+        virtual_address,
+        page_flags
+    ) < 0) {
+        return -1;
     }
+    return 0;
 
-    uint64_t l1_entry = l0_page_table[l1_index];
-    if ((l1_entry & TBL_ENTRY_VALID) == 0) {
-        uint64_t *new_table = NULL;
-        if (alloc_new_table(&new_table) < 0) {
-            return -1;
-        }
-
-        l0_page_table[l1_index] = (
-            TBL_ENTRY_VALID |
-            TBL_ENTRY_TABLE |
-            ((uint64_t)new_table & TBL_ENTRY_ADDR_MASK)
-        );
-        l1_entry = l0_page_table[l1_index];
+    if (*ttbr_table_ptr == NULL) {
+        *ttbr_table_ptr = (uint64_t*)vmap.root_page_table;
     }
-
-    uint64_t *l1_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
-    }
-
-    uint64_t l2_entry = l1_page_table[l2_index];
-    if ((l2_entry & TBL_ENTRY_VALID) == 0) {
-        uint64_t *new_table = NULL;
-        if (alloc_new_table(&new_table) < 0) {
-            return -1;
-        }
-
-        l1_page_table[l2_index] = (
-            TBL_ENTRY_VALID |
-            TBL_ENTRY_TABLE |
-            ((uint64_t)new_table & TBL_ENTRY_ADDR_MASK)
-        );
-        l2_entry = l1_page_table[l2_index];
-    }
-
-    uint64_t *l2_page_table = (uint64_t *)(l2_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l2_page_table, (uint64_t *)&l2_page_table) == 0);
-    }
-
-    l2_page_table[l3_index] = (
-        TBL_ENTRY_VALID |
-        TBL_ENTRY_TABLE |
-        PAGE_FLAG_ACCESS |
-        page_flags |
-        (physical_address & TBL_ENTRY_ADDR_MASK)
-    );
 
     return 0;
 }
@@ -1228,6 +740,12 @@ int mmap_physical_to_virtual(
     uint64_t physical_address,
     uint64_t *virtual_address
 ) {
+    // Identity map if mmap is not initialized.
+    if (!g_mmap_initialized) {
+        *virtual_address = physical_address;
+        return 0;
+    }
+
     if (physical_address < 0x0ULL || physical_address >= MMAP_PHYSICAL_REGION_SIZE) {
         console_write("Physical address is out of range\r\n");
         return -1;

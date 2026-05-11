@@ -95,6 +95,7 @@ int mmap_map_range_l1_block(
     uint64_t physical_start_address,
     uint64_t page_flags
 );
+
 // Maps a single L1 block (1GB)
 int mmap_map_l1_block(
     uint64_t virtual_address,
