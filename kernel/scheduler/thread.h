@@ -4,6 +4,7 @@
 
 // Forward declarations.
 typedef struct linked_list_node_t linked_list_node_t;
+typedef struct process_t process_t;
 
 typedef enum thread_state_t {
     THREAD_STATE_READY,
@@ -26,9 +27,8 @@ typedef struct thread_context_t {
 } thread_context_t;
 
 typedef struct thread_t {
-    uint64_t id;
+    process_t *process;
     uint64_t stack_top;
-
     thread_state_t state;
     thread_type_t type;
     thread_context_t ctx;

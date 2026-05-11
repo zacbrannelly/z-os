@@ -44,36 +44,28 @@ loop:
     // Read ELR_EL1 from the thread context.
     ldr x0, [sp, #(35 * 8)]
 
-    // Read entry point from the thread context.
-    ldr x2, [sp, #0]
-
     // Read the SPSR_EL1 from the thread context.
     ldr x3, [sp, #(34 * 8)]
     
     // Restore the thread's SP from the stack.
     ldr x1, [sp, #8]
+    lsr x2, x1, #63
+    cmp x2, #0
+    b.eq set_user_sp
+
+set_kernel_sp:
     mov sp, x1
+    b jump_to_thread
 
-    // If ELR_EL1 is 0x0, then we are starting a thread.
-    cmp x0, #0
-    b.eq start_thread
+set_user_sp:
+    msr SP_EL0, x1
 
-    // Otherwise we are resuming a thread.
-    b resume_thread
-
-start_thread:
-    // Branch to the thread's entry point.
-    blr x2
-
-    // Terminate the thread on return.
-    b scheduler_terminate
-
-resume_thread:
+jump_to_thread:
     // Restore ELR_EL1.
     msr ELR_EL1, x0
 
-    // Read and restore SPSR_EL1.
+    // Restore SPSR_EL1.
     msr SPSR_EL1, x3
 
-    // Resume the thread from where it was interrupted.
+    // Start / Resume the thread.
     eret

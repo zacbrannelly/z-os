@@ -3,43 +3,60 @@
 
 exception_vector_table:
     // 0x000 = current EL with SP_EL0 active (SPSEL == 0)
-    b current_el_sp0_sync
+    b no_op
 
     .align 7 // Align to 128 bytes
-    b current_el_sp0_irq
+    b no_op
 
     .align 7 // Align to 128 bytes
-    b current_el_sp0_fiq
+    b no_op
 
     .align 7 // Align to 128 bytes
-    b current_el_sp0_serror
+    b no_op
 
     // 0x200 = current EL with SP_EL1 active (SPSEL == 1)
     .align 7 // Align to 128 bytes
-    b current_el_sp1_sync
+    b handle_sync
 
     .align 7 // Align to 128 bytes
-    b current_el_sp1_irq
+    b handle_irq
 
     .align 7 // Align to 128 bytes
-    b current_el_sp1_fiq
+    b handle_fiq
 
     .align 7 // Align to 128 bytes
-    b current_el_sp1_serror
+    b handle_serror
 
-current_el_sp0_sync:
+    // 0x400 = lower EL when lower is 64 bit mode.
+    .align 7 // Align to 128 bytes
+    b handle_sync
+
+    .align 7 // Align to 128 bytes
+    b handle_irq
+
+    .align 7 // Align to 128 bytes
+    b handle_fiq
+
+    .align 7 // Align to 128 bytes
+    b handle_serror
+
+    // 0x600 = lower EL when lower is 32 bit mode.
+    .align 7 // Align to 128 bytes
+    b no_op
+
+    .align 7 // Align to 128 bytes
+    b no_op
+
+    .align 7 // Align to 128 bytes
+    b no_op
+
+    .align 7 // Align to 128 bytes
+    b no_op
+
+no_op:
     eret
 
-current_el_sp0_irq:
-    eret
-
-current_el_sp0_fiq:
-    eret
-
-current_el_sp0_serror:
-    eret
-
-current_el_sp1_sync:
+handle_sync:
     // Store all registers on the stack.
     sub sp, sp, #(35 * 8)
     stp x0,  x1,  [sp, #(0 * 16)]
@@ -70,7 +87,7 @@ current_el_sp1_sync:
     // Call the sync exception handler.
     mov x0, sp
     mrs x1, ESR_EL1
-    bl handle_current_el_sp1_sync_exception
+    bl handle_sync_exception
 
     // Restore the previous registers.
     ldp x0,  x1,  [sp, #(0 * 16)]
@@ -94,11 +111,11 @@ current_el_sp1_sync:
     // Return to what the CPU was doing prior.
     eret
 
-current_el_sp1_irq:
+handle_irq:
     eret
 
-current_el_sp1_fiq:
+handle_fiq:
     eret
 
-current_el_sp1_serror:
+handle_serror:
     eret

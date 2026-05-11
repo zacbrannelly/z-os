@@ -6,6 +6,7 @@
 #include "syscall_test.h"
 #include "syscall_console_write.h"
 #include "syscall_yield.h"
+#include "syscall_exit.h"
 
 /**
 * Calling conventions 
@@ -43,6 +44,9 @@ void syscall_handler(exception_frame_t *frame) {
             break;
         case SYSCALL_YIELD:
             syscall_yield_impl(frame);
+            break;
+        case SYSCALL_EXIT:
+            syscall_exit_impl(frame);
             break;
         default:
             console_write("Unknown syscall index: ");

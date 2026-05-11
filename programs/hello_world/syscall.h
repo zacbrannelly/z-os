@@ -3,6 +3,8 @@
 #include <stdint.h>
 
 #define SYSCALL_CONSOLE_WRITE 0x1
+#define SYSCALL_YIELD 0x2
+#define SYSCALL_EXIT 0x3
 
 /**
 * Calling conventions 
@@ -31,4 +33,12 @@ static inline uint64_t syscall_call(uint64_t syscall_idx, uint64_t arg0, uint64_
 
 static inline void syscall_console_write(const char *message) {
     syscall_call(SYSCALL_CONSOLE_WRITE, (uint64_t)message, 0, 0, 0, 0, 0);
+}
+
+static inline void syscall_yield(void) {
+    syscall_call(SYSCALL_YIELD, 0, 0, 0, 0, 0, 0);
+}
+
+static inline void syscall_exit(void) {
+    syscall_call(SYSCALL_EXIT, 0, 0, 0, 0, 0, 0);
 }

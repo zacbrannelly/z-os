@@ -5,6 +5,8 @@
 #include "../assert.h"
 #include "../kmalloc.h"
 #include "../memory.h"
+#include "../mmap.h"
+#include "../process/process.h"
 #include "../exception_vector_table.h"
 
 typedef struct scheduler_t {
@@ -69,18 +71,24 @@ int scheduler_remove_thread(thread_t *thread) {
     return 0;
 }
 
-static void __attribute__((noreturn)) context_switch(thread_t *next_thread) {
-    register uint64_t x0 asm("x0") = (uint64_t)&next_thread->ctx;
-    __asm__ volatile("b scheduler_switch_to_thread" : : "r" (x0) : "memory");
-    __builtin_unreachable();
-}
-
 static void restore_kernel_stack(void) {
     __asm__ volatile("mov sp, %0" : : "r" (g_scheduler.kernel_stack_top));
 }
 
 static void store_kernel_stack(void) {
     __asm__ volatile("mov %0, sp" : "=r" (g_scheduler.kernel_stack_top));
+}
+
+static void __attribute__((noreturn)) context_switch(thread_t *next_thread) {
+    store_kernel_stack();
+
+    if (next_thread->process != NULL) {
+        assert(vmap_apply_table(&next_thread->process->address_space.page_table, VMAP_DESTINATION_USER) == 0);
+    }
+
+    register uint64_t x0 asm("x0") = (uint64_t)&next_thread->ctx;
+    __asm__ volatile("b scheduler_switch_to_thread" : : "r" (x0) : "memory");
+    __builtin_unreachable();
 }
 
 void scheduler_run(void) {
@@ -109,7 +117,6 @@ void scheduler_run(void) {
     next_thread->state = THREAD_STATE_RUNNING;
 
     if (prev_thread != next_thread) {
-        store_kernel_stack();
         context_switch(next_thread);
     }
 }
@@ -134,6 +141,9 @@ void scheduler_yield(exception_frame_t *frame) {
     // Add the thread back to the run queue.
     scheduler_add_thread(current_thread);
 
+    // Restore the kernel VA mapping.
+    assert(mmap_apply_mappings() == 0);
+
     // Run the scheduler.
     scheduler_run();
 }
@@ -143,6 +153,9 @@ void scheduler_terminate(void) {
 
     // Mark the thread TERMINATED.
     g_scheduler.current_thread->state = THREAD_STATE_TERMINATED;
+
+    // Restore the kernel VA mapping.
+    assert(mmap_apply_mappings() == 0);
 
     // Run the scheduler.
     scheduler_run();

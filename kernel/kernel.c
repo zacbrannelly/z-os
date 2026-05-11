@@ -23,6 +23,7 @@
 #include "exception_vector_table.h"
 #include "syscall/syscall_yield.h"
 #include "scheduler/scheduler.h"
+#include "process/process.h"
 
 #include <stddef.h>
 
@@ -65,6 +66,8 @@ static void kernel_thread_entry(void) {
         cursor_draw();
         gfx_swap_buffers();
     }
+
+    __builtin_unreachable();
 }
 
 static void console_kernel_thread_entry(void) {
@@ -91,6 +94,8 @@ static void console_kernel_thread_entry(void) {
         // Echo the character back to the serial port.
         console_putc(c);
     }
+
+    __builtin_unreachable();
 }
 
 void kernel_main(boot_info_t *boot_info) {
@@ -175,6 +180,24 @@ void kernel_main(boot_info_t *boot_info) {
     thread_t console_kernel_thread;
     assert(thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
     assert(thread_start(&console_kernel_thread) == 0);
+
+    for (int i = 0; i < boot_info->num_boot_modules; i++) {
+        boot_module_t *boot_module = &boot_info->boot_modules[i];
+        process_t *process = (process_t *)kmalloc(sizeof(process_t));
+
+        assert(process != NULL);
+        assert(process_init(process) == 0);
+
+        uint64_t virtual_address = 0;
+        assert(mmap_physical_to_virtual((uint64_t)boot_module->elf_buffer, &virtual_address) == 0);
+        assert(process_load_elf(process, (uint8_t *)virtual_address, boot_module->elf_size) == 0);
+
+        console_write("Loaded boot module: ");
+        console_write(boot_module->name);
+        console_write("\r\n");
+
+        assert(process_start(process) == 0);
+    }
 
     // Run the scheduler.
     scheduler_run();

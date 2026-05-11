@@ -5,6 +5,7 @@
 
 #define SYSCALL_CONSOLE_WRITE 0x1
 #define SYSCALL_YIELD 0x2
+#define SYSCALL_EXIT 0x3
 #define SYSCALL_TEST 123
 
 // Calls a syscall by index.
