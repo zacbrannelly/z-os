@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.25)
 
 file(GLOB_RECURSE LOADER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*")
 
+set(EDK2_BUILD_TARGET "DEBUG" CACHE STRING "EDK2 build target to pass to the EDK2 build command")
+string(TOUPPER "${EDK2_BUILD_TARGET}" EDK2_BUILD_TARGET_UPPER)
+set(EDK2_OUTPUT_DIR "/opt/edk2/Build/bootloader" CACHE PATH "EDK2 output directory inside the build container")
+set(BOOTLOADER_EFI "${EDK2_OUTPUT_DIR}/${EDK2_BUILD_TARGET_UPPER}_GCC5/AARCH64/bootloader.efi")
 set(BOOTLOADER_STAMP "${CMAKE_BINARY_DIR}/artifacts/bootloader.stamp")
 
 # Build the UEFI bootloader through EDK2. CMake orchestrates the step, but the
@@ -22,3 +26,5 @@ add_custom_command(
 add_custom_target(bootloader
     DEPENDS "${BOOTLOADER_STAMP}"
 )
+
+set_property(TARGET bootloader PROPERTY OUTPUT_EFI_PATH "${BOOTLOADER_EFI}")

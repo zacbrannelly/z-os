@@ -5,13 +5,18 @@
 #define MAX_BOOT_MODULES 10
 
 typedef struct boot_module_t {
+    // Name of the boot module.
     char name[64];
+
+    // ELF buffer (physical address).
     uint8_t *elf_buffer;
+
+    // ELF size (in bytes).
     uint64_t elf_size;
 } boot_module_t;
 
 typedef struct boot_info_t {
-    // Framebuffer information.
+    // Framebuffer information (physical address).
     uint32_t *framebuffer;
     uint32_t framebuffer_size;
     uint32_t framebuffer_width;

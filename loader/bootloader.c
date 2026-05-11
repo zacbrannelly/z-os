@@ -154,6 +154,40 @@ static EFI_STATUS load_file(
   return EFI_SUCCESS;
 }
 
+typedef struct boot_module_info_t {
+  char* name;
+  CHAR16* path;
+} boot_module_info_t;
+
+static const boot_module_info_t g_boot_modules_to_load[] = {
+  { "hello_world", L"hello_world.elf" }
+};
+
+static EFI_STATUS load_boot_modules(
+  EFI_SYSTEM_TABLE *system_table,
+  EFI_FILE_PROTOCOL *file_protocol,
+  boot_info_t *boot_info
+) {
+  EFI_STATUS status = EFI_SUCCESS;
+  for (int i = 0; i < sizeof(g_boot_modules_to_load) / sizeof(boot_module_info_t); i++) {
+    const boot_module_info_t *boot_module = &g_boot_modules_to_load[i];
+    uint8_t *boot_module_buffer = NULL;
+    UINTN boot_module_size = 0;
+    status = load_file(system_table, file_protocol, boot_module->path, &boot_module_buffer, &boot_module_size);
+    if (EFI_ERROR(status)) {
+      Print(L"Failed to load boot module: %r\r\n", status);
+      return status;
+    }
+
+    AsciiStrCpyS(boot_info->boot_modules[i].name, 50, boot_module->name);
+    boot_info->boot_modules[i].elf_buffer = boot_module_buffer;
+    boot_info->boot_modules[i].elf_size = boot_module_size;
+    boot_info->num_boot_modules++;
+  }
+
+  return status;
+}
+
 EFI_STATUS EFIAPI UefiMain (
   IN EFI_HANDLE image_handle,
   IN EFI_SYSTEM_TABLE *system_table
@@ -278,6 +312,18 @@ EFI_STATUS EFIAPI UefiMain (
       Print(L"ACPI table found at: 0x%r\r\n", table->VendorTable);
       boot_info.acpi_table = (void*)table->VendorTable;
     }
+  }
+
+  status = load_boot_modules(system_table, file_protocol, &boot_info);
+  if (EFI_ERROR(status)) {
+    Print(L"Failed to load boot modules: %r\r\n", status);
+    return status;
+  }
+
+  for (int i = 0; i < boot_info.num_boot_modules; i++) {
+    CHAR16 name[50];
+    AsciiStrToUnicodeStrS(boot_info.boot_modules[i].name, name, 50);
+    Print(L"Boot module %d: %s\r\n", i, name);
   }
 
   // ============================================ Copy the boot info to physical memory ============================================

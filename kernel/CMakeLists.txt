@@ -32,6 +32,7 @@ target_compile_options(kernel_objects PRIVATE
 )
 
 set(KERNEL_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/kernel/linker.ld")
+set(KERNEL_ELF "${CMAKE_BINARY_DIR}/artifacts/kernel.elf")
 
 # Recreate the old kernel final link exactly: invoke ld directly with the kernel
 # linker script, all compiled kernel objects, and the static openlibm archive.
@@ -50,3 +51,5 @@ add_custom_target(kernel ALL
     COMMAND_EXPAND_LISTS
     VERBATIM
 )
+
+set_property(TARGET kernel PROPERTY OUTPUT_ELF_PATH "${KERNEL_ELF}")
