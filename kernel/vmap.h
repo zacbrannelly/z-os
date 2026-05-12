@@ -75,3 +75,13 @@ int vmap_apply_table(
     vmap_t *vmap,
     vmap_destination_t destination
 );
+
+int vmap_virtual_to_physical(
+    vmap_t *vmap,
+    uint64_t virtual_address,
+    uint64_t *physical_address
+);
+
+uint8_t vmap_is_active(
+    vmap_t *vmap
+);

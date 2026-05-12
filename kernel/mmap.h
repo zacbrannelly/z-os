@@ -39,6 +39,9 @@
 #define MMAP_MEMORY_MAP_RESERVED_SIZE (1ULL << 20) // 1MiB (256 pages)
 #define PAGE_TABLE_RESERVED_SIZE (1ULL << 23) // 8MiB (2048 pages)
 
+// Forward declarations.
+typedef struct vmap_t vmap_t;
+
 typedef enum mmap_memory_type_t {
     MMAP_MEMORY_TYPE_USABLE,
     MMAP_MEMORY_TYPE_RESERVED,
@@ -121,3 +124,5 @@ void mmap_debug_print(
     uint64_t efi_memory_map_size,
     uint64_t efi_memory_map_descriptor_size
 );
+
+int mmap_build_vmap(vmap_t *vmap, uint64_t virtual_address);

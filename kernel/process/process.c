@@ -68,7 +68,6 @@ static int allocate_memory_pages(
         linked_list_node_t *node = NULL;
         linked_list_insert(&process->memory_pages, page, &node);
 
-
         uint64_t virtual_address = 0;
         if (mmap_physical_to_virtual(page->physical_address, &virtual_address) < 0) {
             return -1;

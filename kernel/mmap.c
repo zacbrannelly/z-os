@@ -494,6 +494,14 @@ static int build_vmap_table(uint64_t **ttbr_table_ptr, vmap_t *vmap) {
     return 0;
 }
 
+int mmap_build_vmap(vmap_t *vmap, uint64_t virtual_address) {
+    uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_address);
+    if (*ttbr_table_ptr == NULL) {
+        return -1;
+    }
+    return build_vmap_table(ttbr_table_ptr, vmap);
+}
+
 int mmap_apply_mappings(void) {
     vmap_t ttbr0_vmap;
     if (vmap_init(&ttbr0_vmap, alloc_vmap_page, vmap_physical_to_virtual) < 0) {
@@ -759,72 +767,9 @@ int mmap_virtual_to_physical(
     uint64_t virtual_address,
     uint64_t *physical_address
 ) {
-    uint64_t **ttbr_table_ptr = get_ttbr_table_ptr(virtual_address);
-    if (*ttbr_table_ptr == NULL) {
+    vmap_t vmap;
+    if (build_vmap_table(get_ttbr_table_ptr(virtual_address), &vmap) < 0) {
         return -1;
     }
-
-    uint64_t *ttbr_table = *ttbr_table_ptr;
-    uint64_t l0_index = (virtual_address >> 39) & 0x1FF;
-    uint64_t l1_index = (virtual_address >> 30) & 0x1FF;
-    uint64_t l2_index = (virtual_address >> 21) & 0x1FF;
-    uint64_t l3_index = (virtual_address >> 12) & 0x1FF;
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)ttbr_table, (uint64_t *)&ttbr_table) == 0);
-    }
-
-    uint64_t l0_entry = ttbr_table[l0_index];
-    if ((l0_entry & TBL_ENTRY_VALID) == 0) {
-        return -1;
-    }
-
-    uint64_t *l0_page_table = (uint64_t *)(l0_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l0_page_table, (uint64_t *)&l0_page_table) == 0);
-    }
-
-    uint64_t l1_entry = l0_page_table[l1_index];
-    if ((l1_entry & TBL_ENTRY_VALID) == 0) {
-        return -1;
-    }
-    
-    // Block entry, return the physical address.
-    if ((l1_entry & TBL_ENTRY_TABLE) == 0) {
-        *physical_address = (l1_entry & TBL_ENTRY_L1_BLOCK_ADDR_MASK) | (virtual_address & (TBL_L1_BLOCK_SIZE - 1));
-        return 0;
-    }
-
-    uint64_t *l1_page_table = (uint64_t *)(l1_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l1_page_table, (uint64_t *)&l1_page_table) == 0);
-    }
-
-    uint64_t l2_entry = l1_page_table[l2_index];
-    if ((l2_entry & TBL_ENTRY_VALID) == 0) {
-        return -1;
-    }
-
-    // Block entry, return the physical address.
-    if ((l2_entry & TBL_ENTRY_TABLE) == 0) {
-        *physical_address = (l2_entry & TBL_ENTRY_L2_BLOCK_ADDR_MASK) | (virtual_address & (TBL_L2_BLOCK_SIZE - 1));
-        return 0;
-    }
-
-    uint64_t *l2_page_table = (uint64_t *)(l2_entry & TBL_ENTRY_ADDR_MASK);
-
-    if (g_mmap_initialized) {
-        assert(mmap_physical_to_virtual((uint64_t)l2_page_table, (uint64_t *)&l2_page_table) == 0);
-    }
-
-    uint64_t l3_entry = l2_page_table[l3_index];
-    if ((l3_entry & TBL_ENTRY_VALID) == 0) {
-        return -1;
-    }
-
-    // Page entry, return the physical address.
-    *physical_address = (l3_entry & TBL_ENTRY_ADDR_MASK) | (virtual_address & (MMAP_GRANULE_SIZE - 1));
-    return 0;
+    return vmap_virtual_to_physical(&vmap, virtual_address, physical_address);
 }
