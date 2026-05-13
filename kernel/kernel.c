@@ -21,10 +21,10 @@
 #include "time.h"
 #include "assert.h"
 #include "exception_vector_table.h"
-#include "syscall/syscall_yield.h"
 #include "scheduler/scheduler.h"
 #include "process/process.h"
 
+#include <libz/syscall.h>
 #include <stddef.h>
 
 // TODO: Get these from the bootloader.

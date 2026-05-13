@@ -12,6 +12,7 @@ add_executable(hello_world
 
 target_include_directories(hello_world PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}"
 )
 
 target_compile_options(hello_world PRIVATE

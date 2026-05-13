@@ -162,11 +162,10 @@ static block_header_t *find_or_create_free_block(block_allocator_t *allocator, u
         }
 
         uint64_t page_virtual_address = allocator->virtual_base + offset - sizeof(block_header_t) + i * PAGE_SIZE;
-        if (vmap_map_range(
+        if (vmap_map_page(
             allocator->address_space,
-            page_virtual_address,
-            page_virtual_address + PAGE_SIZE,
             page_address,
+            page_virtual_address,
             allocator->page_flags
         ) < 0) {
             // TODO: Gracefully handle this error, make sure it doesn't leave the system in an invalid state.

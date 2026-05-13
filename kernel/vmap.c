@@ -107,6 +107,7 @@ int vmap_map_range_l1_block(
     uint64_t physical_start_address,
     uint64_t page_flags
 ) {
+    // TODO: This assumes the physical pages are contiguous. This is not always the case.
     for (
         uint64_t virtual_address = virtual_start_address;
         virtual_address < virtual_end_address;
@@ -216,6 +217,7 @@ int vmap_map_range_l2_block(
     uint64_t physical_start_address,
     uint64_t page_flags
 ) {
+    // TODO: This assumes the physical pages are contiguous. This is not always the case.
     for (
         uint64_t virtual_address = virtual_start_address;
         virtual_address < virtual_end_address;
@@ -237,6 +239,7 @@ int vmap_map_range(
     uint64_t physical_start_address,
     uint64_t page_flags
 ) {
+    // TODO: This assumes the physical pages are contiguous. This is not always the case.
     for (
         uint64_t virtual_address = virtual_start_address;
         virtual_address < virtual_end_address;

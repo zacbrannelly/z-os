@@ -71,6 +71,10 @@ int scheduler_remove_thread(thread_t *thread) {
     return 0;
 }
 
+thread_t *scheduler_get_current_thread(void) {
+    return g_scheduler.current_thread;
+}
+
 static void restore_kernel_stack(void) {
     __asm__ volatile("mov sp, %0" : : "r" (g_scheduler.kernel_stack_top));
 }

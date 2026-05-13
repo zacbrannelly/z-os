@@ -2,8 +2,7 @@
 
 #include "console.h"
 #include "assert.h"
-#include "syscall/syscall.h"
-#include "syscall/syscall_test.h"
+#include "syscall/syscall_handler.h"
 
 // Exception class codes
 #define SVC_EXCEPTION_CLASS 0x15
@@ -18,10 +17,6 @@ static void write_vbar_el1(uint64_t vbar_el1) {
 int exception_vector_table_init(void) {
     // Write the exception vector table to the VBAR_EL1 register.
     write_vbar_el1((uint64_t)exception_vector_table);
-
-    // Will assert if SYSCALL_TEST returns an incorrect value.
-    syscall_test();
-
     return 0;
 }
 

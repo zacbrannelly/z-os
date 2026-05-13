@@ -5,6 +5,8 @@
 #define SYSCALL_CONSOLE_WRITE 0x1
 #define SYSCALL_YIELD 0x2
 #define SYSCALL_EXIT 0x3
+#define SYSCALL_MMAP 0x4
+#define SYSCALL_MUNMAP 0x5
 
 /**
 * Calling conventions 
@@ -41,4 +43,12 @@ static inline void syscall_yield(void) {
 
 static inline void syscall_exit(void) {
     syscall_call(SYSCALL_EXIT, 0, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_mmap(uint64_t address, uint64_t length, uint64_t flags) {
+    return syscall_call(SYSCALL_MMAP, address, length, flags, 0, 0, 0);
+}
+
+static inline void syscall_munmap(void *address, uint64_t length) {
+    syscall_call(SYSCALL_MUNMAP, (uint64_t)address, length, 0, 0, 0, 0);
 }

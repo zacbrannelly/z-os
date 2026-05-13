@@ -1,4 +1,4 @@
-#include "syscall.h"
+#include <libz/syscall.h>
 
 int main(void) {
     syscall_console_write("Hello, world!\r\n");
