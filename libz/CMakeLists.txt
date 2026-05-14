@@ -5,17 +5,17 @@ set(LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/linker.ld")
 file(GLOB_RECURSE C_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 file(GLOB_RECURSE ASM_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
 
-add_executable(hello_world
+add_library(libz STATIC
     ${C_SOURCES}
     ${ASM_SOURCES}
 )
 
-target_include_directories(hello_world PRIVATE
+target_include_directories(libz PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}"
 )
 
-target_compile_options(hello_world PRIVATE
+target_compile_options(libz PRIVATE
     -ffreestanding
     -fno-builtin
     -fno-stack-protector
@@ -23,19 +23,7 @@ target_compile_options(hello_world PRIVATE
     -fno-pic
 )
 
-target_link_options(hello_world PRIVATE
+target_link_options(libz PRIVATE
     -nostdlib
     -no-pie
-    -Wl,-T,${LINKER_SCRIPT}
-    -Wl,-Map,${CMAKE_BINARY_DIR}/artifacts/hello_world.map
-)
-
-target_link_libraries(hello_world PRIVATE
-    libz
-)
-
-set_target_properties(hello_world PROPERTIES
-    OUTPUT_NAME "hello_world"
-    SUFFIX ".elf"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/artifacts"
 )

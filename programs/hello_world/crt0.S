@@ -2,6 +2,9 @@
 .extern main
 
 _start:
+    // Initialize the malloc library.
+    bl malloc_init
+
     // Call the main function.
     bl main
 

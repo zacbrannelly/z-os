@@ -14,17 +14,6 @@
 #define USER_STACK_SIZE (1ULL << 16) // 64KiB
 #define USER_STACK_PAGE_FLAGS PAGE_FLAG_NX | PAGE_FLAG_EL0_EL1_RW | PAGE_FLAG_NORMAL_MEMORY | PAGE_FLAG_INNER_SHARABLE
 
-typedef enum process_memory_page_type_t {
-    PROCESS_MEMORY_PAGE_TYPE_USER_STACK,
-    PROCESS_MEMORY_PAGE_TYPE_PROGRAM
-} process_memory_page_type_t;
-
-typedef struct process_memory_page_t {
-    uint64_t virtual_address;
-    uint64_t physical_address;
-    process_memory_page_type_t type;
-} process_memory_page_t;
-
 static int allocate_memory_pages(
     process_t *process,
     process_memory_page_type_t type,
@@ -49,20 +38,26 @@ static int allocate_memory_pages(
         page->physical_address = 0;
         page->type = type;
 
-        if (page_alloc_block(PAGE_ALLOC_ORDER_4KB, &page->physical_address) < 0) {
-            kfree(page);
-            return -1;
-        }
-
-        if (vmap_map_page(
-            &process->address_space.page_table,
-            page->physical_address,
-            page->virtual_address,
-            page_flags
-        ) < 0) {
-            page_alloc_free(page->physical_address, PAGE_ALLOC_ORDER_4KB);
-            kfree(page);
-            return -1;
+        uint64_t existing_physical_address = 0;
+        if (vmap_virtual_to_physical(&process->address_space.page_table, page->virtual_address, &existing_physical_address) == 0) {
+            // TODO: Resolve conflicting page flags for existing mapped pages.
+            page->physical_address = existing_physical_address;
+        } else {
+            if (page_alloc_block(PAGE_ALLOC_ORDER_4KB, &page->physical_address) < 0) {
+                kfree(page);
+                return -1;
+            }
+    
+            if (vmap_map_page(
+                &process->address_space.page_table,
+                page->physical_address,
+                page->virtual_address,
+                page_flags
+            ) < 0) {
+                page_alloc_free(page->physical_address, PAGE_ALLOC_ORDER_4KB);
+                kfree(page);
+                return -1;
+            }
         }
 
         linked_list_node_t *node = NULL;
@@ -76,14 +71,16 @@ static int allocate_memory_pages(
         if (buffer != NULL && bytes_remaining > 0) {
             if (bytes_remaining < PAGE_SIZE) {
                 memory_copy((void *)virtual_address, (void *)buffer, bytes_remaining);
+                bytes_remaining = 0;
+                buffer = NULL;
             } else {
                 memory_copy((void *)virtual_address, (void *)buffer, PAGE_SIZE);
+                bytes_remaining -= PAGE_SIZE;
+                buffer += PAGE_SIZE;
             }
-
-            bytes_remaining -= PAGE_SIZE;
-            buffer += PAGE_SIZE;
         } else {
-            memory_set((void *)virtual_address, 0, PAGE_SIZE);
+            // TODO: Figure out how to handle overlapping program segments (they have the same / overlappping VA spaces).
+            // TODO: memory_set((void *)virtual_address, 0, PAGE_SIZE);
         }
     }
     return 0;
@@ -99,6 +96,10 @@ int process_init(process_t *process) {
     }
 
     if (address_space_init(&process->address_space) < 0) {
+        return -1;
+    }
+
+    if (linked_list_init(&process->mmap_entries) < 0) {
         return -1;
     }
 

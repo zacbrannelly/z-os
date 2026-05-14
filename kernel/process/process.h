@@ -8,11 +8,28 @@
 // Forward declarations.
 typedef struct thread_t thread_t;
 
+typedef enum process_memory_page_type_t {
+    PROCESS_MEMORY_PAGE_TYPE_USER_STACK,
+    PROCESS_MEMORY_PAGE_TYPE_PROGRAM
+} process_memory_page_type_t;
+
+typedef struct process_memory_page_t {
+    uint64_t virtual_address;
+    uint64_t physical_address;
+    process_memory_page_type_t type;
+} process_memory_page_t;
+
+typedef struct mmap_entry_t {
+    uint64_t virtual_address;
+    uint64_t num_pages;
+} mmap_entry_t;
+
 typedef struct process_t {
     thread_t *main_thread;
     linked_list_t threads;
     address_space_t address_space;
     linked_list_t memory_pages;
+    linked_list_t mmap_entries;
 } process_t;
 
 int process_init(process_t *process);

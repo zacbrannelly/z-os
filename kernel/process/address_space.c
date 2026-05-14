@@ -1,12 +1,21 @@
 #include "address_space.h"
 #include "../page_alloc.h"
 #include "../mmap.h"
+#include "../memory.h"
 
 static uint64_t alloc_vmap_page(void) {
     uint64_t page;
     if (page_alloc_block(PAGE_ALLOC_ORDER_4KB, &page) < 0) {
         return 0;
     }
+
+    uint64_t virtual_address = 0;
+    if (mmap_physical_to_virtual(page, &virtual_address) < 0) {
+        return 0;
+    }
+
+    memory_set((void *)virtual_address, 0, PAGE_SIZE);
+
     return page;
 }
 

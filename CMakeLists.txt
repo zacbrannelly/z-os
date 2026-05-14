@@ -14,6 +14,9 @@ set(ESP_DIR "${CMAKE_SOURCE_DIR}/esp" CACHE PATH "ESP staging directory")
 # Include the 3rdparty targets (openlibm).
 add_subdirectory(./3rdparty)
 
+# Include the libz library (our version of libc).
+add_subdirectory(./libz)
+
 # Include the kernel target.
 add_subdirectory(./kernel)
 
