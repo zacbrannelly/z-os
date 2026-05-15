@@ -8,6 +8,7 @@ file(GLOB_RECURSE ASM_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.S
 add_executable(hello_world
     ${C_SOURCES}
     ${ASM_SOURCES}
+    ${CMAKE_SOURCE_DIR}/libz/crt0.S
 )
 
 target_include_directories(hello_world PRIVATE
