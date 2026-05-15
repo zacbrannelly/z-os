@@ -6,6 +6,7 @@
 #include "../assert.h"
 #include "../utils/linked_list.h"
 #include "../console.h"
+#include "../kmalloc.h"
 
 #include <stddef.h>
 
@@ -65,13 +66,21 @@ uint64_t process_mmap(
         page_flags |= PAGE_FLAG_EL0_EL1_RW;
     }
 
-    // TODO: Add entries to the mmap_entries linked list.
     for (uint64_t i = 0; i < num_pages; i++) {
         uint64_t page_address = 0;
         // TODO: Handle error cases properly.
         assert(page_alloc_block(PAGE_ALLOC_ORDER_4KB, &page_address) == 0);
         assert(vmap_map_page(&process->address_space.page_table, page_address, address + i * PAGE_SIZE, page_flags) == 0);
     }
+
+    mmap_entry_t *entry = (mmap_entry_t *)kmalloc(sizeof(mmap_entry_t));
+    assert(entry != NULL);
+
+    entry->virtual_address = address;
+    entry->num_pages = num_pages;
+
+    linked_list_node_t *node = NULL;
+    assert(linked_list_insert(&process->mmap_entries, entry, &node) == 0);
 
     return address;
 }
