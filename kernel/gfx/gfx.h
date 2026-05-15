@@ -1,13 +1,11 @@
 #pragma once
 
 #include <stdint.h>
-
-#define GFX_COLOR_WHITE 0x00FFFFFF
-#define GFX_COLOR_BLACK 0x00000000
-#define GFX_COLOR(r, g, b) ((r << 16) | (g << 8) | b)
+#include "colors.h"
 
 // Forward declarations.
 typedef struct boot_info_t boot_info_t;
+typedef struct bitmap_t bitmap_t;
 
 int gfx_init(boot_info_t *boot_info);
 void gfx_clear(uint32_t color);
@@ -26,6 +24,9 @@ void gfx_draw_alpha_bitmap_scaled(
     uint32_t color
 );
 void gfx_swap_buffers(void);
+
+bitmap_t *gfx_get_framebuffer(void);
+bitmap_t *gfx_get_back_framebuffer(void);
 
 uint32_t gfx_get_framebuffer_width(void);
 uint32_t gfx_get_framebuffer_height(void);

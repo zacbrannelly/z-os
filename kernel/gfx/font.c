@@ -3,6 +3,8 @@
 #include "fonts/roboto_mono.ttf.h"
 
 #include "gfx.h"
+#include "bitmap.h"
+#include "paint.h"
 #include "../console.h"
 #include "../kmalloc.h"
 
@@ -174,6 +176,10 @@ int font_calculate_cursor_pos(
 }
 
 int font_draw_text(const char *text, int32_t x, int32_t baseline, uint32_t color) {
+    return font_draw_text_bitmap(gfx_get_back_framebuffer(), text, x, baseline, color);
+}
+
+int font_draw_text_bitmap(bitmap_t *bitmap, const char *text, int32_t x, int32_t baseline, uint32_t color) {
     int32_t cursor_x = x;
     int32_t cursor_y = baseline;
 
@@ -201,7 +207,8 @@ int font_draw_text(const char *text, int32_t x, int32_t baseline, uint32_t color
         int dst_width = chardata->xoff2 - chardata->xoff;
         int dst_height = chardata->yoff2 - chardata->yoff;
 
-        gfx_draw_alpha_bitmap_scaled(
+        paint_draw_alpha_bitmap_scaled(
+            bitmap,
             g_default_font.atlas,
             ATLAS_WIDTH,
             src_x0,

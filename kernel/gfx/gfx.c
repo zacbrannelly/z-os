@@ -7,19 +7,17 @@
 #include "../console.h"
 #include "../kmalloc.h"
 #include "../mmap.h"
-
+#include "colors.h"
+#include "bitmap.h"
+#include "paint.h"
 #include "font.h"
 
 #define GFX_VIRTUAL_BASE_ADDRESS 0xFFFF400000000000ULL
 #define GFX_PAGE_FLAGS PAGE_FLAG_EL1_RW | PAGE_FLAG_NX | PAGE_FLAG_NORMAL_MEMORY_NC | PAGE_FLAG_INNER_SHARABLE | PAGE_FLAG_ACCESS
 
 typedef struct gfx_t {
-    uint32_t *framebuffer;       // Pointer to the framebuffer.
-    uint32_t framebuffer_size;   // Size of the framebuffer in pixels.
-    uint32_t framebuffer_width;  // Width of the framebuffer in pixels.
-    uint32_t framebuffer_stride; // Stride of the framebuffer in bytes.
-
-    uint32_t *back_framebuffer;  // Pointer to the back framebuffer.
+    bitmap_t *framebuffer;
+    bitmap_t *back_framebuffer;
 } gfx_t;
 
 static gfx_t g_gfx;
@@ -30,8 +28,21 @@ int gfx_init(boot_info_t *boot_info) {
         return -1;
     }
 
+    uint32_t width = boot_info->framebuffer_width;
+    uint32_t height = boot_info->framebuffer_size / width;
+    g_gfx.framebuffer = bitmap_from_data(
+        (uint8_t *)GFX_VIRTUAL_BASE_ADDRESS,
+        width,
+        height,
+        BITMAP_PIXEL_FORMAT_RGB32
+    );
+
+    if (g_gfx.framebuffer == NULL) {
+        console_write("Failed to create framebuffer\r\n");
+        return -1;
+    }
+
     // Map the physical framebuffer to the virtual address space.
-    g_gfx.framebuffer = (uint32_t *)GFX_VIRTUAL_BASE_ADDRESS;
     if (mmap_map_range(
         GFX_VIRTUAL_BASE_ADDRESS,
         GFX_VIRTUAL_BASE_ADDRESS + boot_info->framebuffer_size * sizeof(uint32_t),
@@ -42,16 +53,15 @@ int gfx_init(boot_info_t *boot_info) {
         return -1;
     }
 
-    g_gfx.framebuffer_size = boot_info->framebuffer_size;
-    g_gfx.framebuffer_width = boot_info->framebuffer_width;
-    g_gfx.framebuffer_stride = boot_info->framebuffer_stride;
-
-    g_gfx.back_framebuffer = (uint32_t *)kmalloc(g_gfx.framebuffer_size * sizeof(uint32_t));
+    g_gfx.back_framebuffer = bitmap_create(
+        width,
+        height,
+        BITMAP_PIXEL_FORMAT_RGB32
+    );
     if (g_gfx.back_framebuffer == NULL) {
-        console_write("Failed to allocate back framebuffer\r\n");
+        console_write("Failed to create back framebuffer\r\n");
         return -1;
     }
-    memory_set(g_gfx.back_framebuffer, 0, g_gfx.framebuffer_size * sizeof(uint32_t));
 
     if (font_init() < 0) {
         console_write("Failed to initialize font system\r\n");
@@ -62,41 +72,11 @@ int gfx_init(boot_info_t *boot_info) {
 }
 
 void gfx_clear(uint32_t color) {
-    for (uint32_t i = 0; i < g_gfx.framebuffer_size; i++) {
-        g_gfx.back_framebuffer[i] = color;
-    }
+    paint_clear(g_gfx.back_framebuffer, color);
 }
 
 void gfx_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t color) {
-    uint32_t framebuffer_height = gfx_get_framebuffer_height();
-
-    for (uint32_t i = 0; i < height; i++) {
-        for (uint32_t j = 0; j < width; j++) {
-            int32_t x0 = x + j;
-            int32_t y0 = y + i;
-            if (x0 < 0 || y0 < 0 || x0 >= g_gfx.framebuffer_width || y0 >= framebuffer_height)
-                continue;
-
-            g_gfx.back_framebuffer[x0 + y0 * g_gfx.framebuffer_width] = color;
-        }
-    }
-}
-
-static uint32_t gfx_blend_colors(uint32_t src_color, uint32_t dst_color, uint32_t alpha) {
-    uint32_t inv_alpha = 255 - alpha;
-    uint32_t src_red = (src_color >> 16) & 0xFF;
-    uint32_t src_green = (src_color >> 8) & 0xFF;
-    uint32_t src_blue = src_color & 0xFF;
-
-    uint32_t dst_red = (dst_color >> 16) & 0xFF;
-    uint32_t dst_green = (dst_color >> 8) & 0xFF;
-    uint32_t dst_blue = dst_color & 0xFF;
-
-    uint32_t red = (src_red * alpha + dst_red * inv_alpha) / 255;
-    uint32_t green = (src_green * alpha + dst_green * inv_alpha) / 255;
-    uint32_t blue = (src_blue * alpha + dst_blue * inv_alpha) / 255;
-
-    return (red << 16) | (green << 8) | blue;
+    paint_fill_rect(g_gfx.back_framebuffer, x, y, width, height, color);
 }
 
 void gfx_draw_alpha_bitmap_scaled(
@@ -112,38 +92,38 @@ void gfx_draw_alpha_bitmap_scaled(
     uint32_t dst_height,
     uint32_t color
 ) {
-    uint32_t framebuffer_height = gfx_get_framebuffer_height();
-
-    for (uint32_t dy = 0; dy < dst_height; dy++) {
-        int src_y0 = src_y + (dy * src_height) / dst_height;
-
-        for (uint32_t dx = 0; dx < dst_width; dx++) {
-            int src_x0 = src_x + (dx * src_width) / dst_width;
-            uint8_t alpha = src_bitmap[src_x0 + src_y0 * src_stride];
-            if (alpha == 0) continue;
-
-            int dst_x0 = dst_x + dx;
-            int dst_y0 = dst_y + dy;
-            if (dst_x0 < 0 || dst_y0 < 0 || dst_x0 >= g_gfx.framebuffer_width || dst_y0 >= framebuffer_height)
-                continue;
-
-            uint32_t *pixel_ptr = &g_gfx.back_framebuffer[dst_x0 + dst_y0 * g_gfx.framebuffer_width];
-            uint32_t existing_color = *pixel_ptr;
-            *pixel_ptr = gfx_blend_colors(color, existing_color, alpha);
-        }
-    }
+    paint_draw_alpha_bitmap_scaled(
+        g_gfx.back_framebuffer,
+        src_bitmap,
+        src_stride,
+        src_x,
+        src_y,
+        src_width,
+        src_height,
+        dst_x,
+        dst_y,
+        dst_width,
+        dst_height,
+        color
+    );
 }
 
 void gfx_swap_buffers(void) {
-    for (uint32_t i = 0; i < g_gfx.framebuffer_size; i++) {
-        g_gfx.framebuffer[i] = g_gfx.back_framebuffer[i];
-    }
+    paint_swap_buffers(g_gfx.framebuffer, g_gfx.back_framebuffer);
+}
+
+bitmap_t *gfx_get_framebuffer(void) {
+    return g_gfx.framebuffer;
+}
+
+bitmap_t *gfx_get_back_framebuffer(void) {
+    return g_gfx.back_framebuffer;
 }
 
 uint32_t gfx_get_framebuffer_width(void) {
-    return g_gfx.framebuffer_width;
+    return g_gfx.framebuffer->width;
 }
 
 uint32_t gfx_get_framebuffer_height(void) {
-    return (g_gfx.framebuffer_size * sizeof(uint32_t)) / g_gfx.framebuffer_stride;
+    return g_gfx.framebuffer->height;
 }

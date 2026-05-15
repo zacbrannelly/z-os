@@ -31,8 +31,8 @@ int text_input_alloc(text_input_t *text_input) {
 
     text_input->position.x = 0;
     text_input->position.y = 0;
-    text_input->cursor_color = GFX_COLOR_WHITE;
-    text_input->text_color = GFX_COLOR_WHITE;
+    text_input->cursor_color = RGB_COLOR_WHITE;
+    text_input->text_color = RGB_COLOR_WHITE;
 
     text_input->cursor_size.x = TEXT_INPUT_CHAR_WIDTH;
     text_input->cursor_size.y = font_get_line_height();

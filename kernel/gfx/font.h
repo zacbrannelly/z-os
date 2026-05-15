@@ -2,6 +2,9 @@
 
 #include <stdint.h>
 
+// Forward declarations.
+typedef struct bitmap_t bitmap_t;
+
 int font_init(void);
 int font_get_line_height(void);
 int font_get_ascent(void);
@@ -15,4 +18,6 @@ int font_calculate_cursor_pos(
     int32_t *out_cursor_x,
     int32_t *out_cursor_y
 );
+
 int font_draw_text(const char *text, int32_t x, int32_t baseline, uint32_t color);
+int font_draw_text_bitmap(bitmap_t *bitmap, const char *text, int32_t x, int32_t baseline, uint32_t color);

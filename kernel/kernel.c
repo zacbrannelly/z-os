@@ -44,7 +44,7 @@ static void kernel_thread_entry(void) {
     text_input.position.y = 100;
 
     while (1) {
-        gfx_clear(GFX_COLOR_BLACK);
+        gfx_clear(RGB_COLOR_BLACK);
 
         xhci_poll_events();
         usb_hid_mouse_poll();
