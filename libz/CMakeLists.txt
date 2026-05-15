@@ -27,3 +27,7 @@ target_link_options(libz PRIVATE
     -nostdlib
     -no-pie
 )
+
+target_link_libraries(libz INTERFACE
+    "${LIBGCC_FILE}"
+)

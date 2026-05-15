@@ -33,6 +33,7 @@ target_link_options(hello_world PRIVATE
 
 target_link_libraries(hello_world PRIVATE
     libz
+    "${LIBGCC_FILE}"
 )
 
 set_target_properties(hello_world PROPERTIES

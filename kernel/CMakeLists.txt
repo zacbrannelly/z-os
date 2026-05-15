@@ -43,6 +43,7 @@ add_custom_target(kernel ALL
         -o "${KERNEL_ELF}"
         $<TARGET_OBJECTS:kernel_objects>
         "$<TARGET_FILE:openlibm>"
+        "${LIBGCC_FILE}"
     DEPENDS
         kernel_objects
         openlibm

@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 
+set(CMAKE_C_COMPILER gcc CACHE STRING "C compiler" FORCE)
+set(CMAKE_ASM_COMPILER gcc CACHE STRING "ASM compiler" FORCE)
+
 project(z_os LANGUAGES C ASM)
 
 # General CMake configuration for the in-container build.
@@ -7,6 +10,20 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    message(FATAL_ERROR "This build is currently configured to require GCC, but CMake selected ${CMAKE_C_COMPILER_ID}.")
+endif()
+
+execute_process(
+    COMMAND "${CMAKE_C_COMPILER}" -print-libgcc-file-name
+    OUTPUT_VARIABLE LIBGCC_FILE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(NOT EXISTS "${LIBGCC_FILE}")
+    message(FATAL_ERROR "Failed to locate libgcc using ${CMAKE_C_COMPILER}.")
+endif()
 
 # Final output paths.
 set(ESP_DIR "${CMAKE_SOURCE_DIR}/esp" CACHE PATH "ESP staging directory")
