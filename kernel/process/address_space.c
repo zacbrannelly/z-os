@@ -13,7 +13,6 @@ static uint64_t alloc_vmap_page(void) {
     if (mmap_physical_to_virtual(page, &virtual_address) < 0) {
         return 0;
     }
-
     memory_set((void *)virtual_address, 0, PAGE_SIZE);
 
     return page;
