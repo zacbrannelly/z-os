@@ -23,17 +23,31 @@ int linked_list_insert(linked_list_t *list, void* data, linked_list_node_t **nod
     new_node->data = data;
     new_node->next = NULL;
     new_node->prev = NULL;
+    new_node->list_is_owner = 1;
 
-    if (list->head == NULL) {
-        list->head = new_node;
-        list->tail = new_node;
-    } else {
-        list->tail->next = new_node;
-        new_node->prev = list->tail;
-        list->tail = new_node;
+    if (linked_list_insert_node(list, new_node) < 0) {
+        kfree(new_node);
+        return -1;
     }
 
     *node = new_node;
+    return 0;
+}
+
+int linked_list_insert_node(linked_list_t *list, linked_list_node_t *node) {
+    if (list == NULL || node == NULL) {
+        return -1;
+    }
+
+    if (list->head == NULL) {
+        list->head = node;
+        list->tail = node;
+    } else {
+        list->tail->next = node;
+        node->prev = list->tail;
+        list->tail = node;
+    }
+
     return 0;
 }
 
@@ -54,6 +68,31 @@ int linked_list_remove(linked_list_t *list, linked_list_node_t *node) {
         list->tail = node->prev;
     }
 
-    kfree(node);
+    node->next = NULL;
+    node->prev = NULL;
+
+    if (node->list_is_owner) {
+        kfree(node);
+    }
+
+    return 0;
+}
+
+int linked_list_destroy(linked_list_t *list) {
+    if (list == NULL) {
+        return -1;
+    }
+
+    linked_list_node_t *node = list->head;
+    while (node != NULL) {
+        linked_list_node_t *next_node = node->next;
+        if (node->list_is_owner) {
+            kfree(node);
+        }
+        node = next_node;
+    }
+
+    list->head = NULL;
+    list->tail = NULL;
     return 0;
 }
