@@ -97,7 +97,7 @@ int block_allocator_init(
     memory_set(allocator, 0, sizeof(block_allocator_t));
     allocator->mmap_flags = mmap_flags;
 
-    allocator->virtual_base = mmap(0ULL, BLOCK_ALLOCATOR_DEFAULT_SIZE, mmap_flags);
+    allocator->virtual_base = mmap(0ULL, BLOCK_ALLOCATOR_DEFAULT_SIZE, mmap_flags, -1);
     assert(allocator->virtual_base != 0);
 
     allocator->block_list_head = (block_header_t *)allocator->virtual_base;
@@ -135,7 +135,7 @@ static block_header_t *find_or_create_free_block(block_allocator_t *allocator, u
         num_pages++;
     }
 
-    assert(mmap(allocator->virtual_base + offset, num_pages * MAP_PAGE_SIZE, allocator->mmap_flags) > 0);
+    assert(mmap(allocator->virtual_base + offset, num_pages * MAP_PAGE_SIZE, allocator->mmap_flags, -1) > 0);
 
     // Build the new block header.
     block_header_t *new_block_header = (block_header_t *)(allocator->virtual_base + offset - sizeof(block_header_t));

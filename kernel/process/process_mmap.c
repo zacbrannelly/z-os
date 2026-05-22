@@ -1,12 +1,16 @@
 #include "process_mmap.h"
 #include "process.h"
 #include "address_space.h"
+#include "fd_table.h"
+#include "shared_memory.h"
+#include "../files/file.h"
 #include "../page_alloc.h"
 #include "../mmap.h"
 #include "../assert.h"
-#include "../utils/linked_list.h"
 #include "../console.h"
 #include "../kmalloc.h"
+#include "../utils/linked_list.h"
+#include "../utils/vector.h"
 
 #include <stddef.h>
 
@@ -40,7 +44,8 @@ uint64_t process_mmap(
     process_t *process,
     uint64_t address,
     uint64_t length,
-    uint64_t flags
+    uint64_t flags,
+    handle_t fd
 ) {
     // The virtual address must be aligned to 4kb.
     assert(address % PAGE_SIZE == 0);
@@ -66,12 +71,35 @@ uint64_t process_mmap(
         page_flags |= PAGE_FLAG_EL0_EL1_RW;
     }
 
-    for (uint64_t i = 0; i < num_pages; i++) {
-        uint64_t page_address = 0;
-        // TODO: Handle error cases properly.
-        assert(page_alloc_block(PAGE_ALLOC_ORDER_4KB, &page_address) == 0);
-        assert(vmap_map_page(&process->address_space.page_table, page_address, address + i * PAGE_SIZE, page_flags) == 0);
+    if (flags & MAP_SHARED) {
+        assert(fd >= 0);
+        
+        file_t *file = NULL;
+        assert(fd_table_get(&process->fd_table, fd, &file) == 0);
+        assert(file != NULL);
+        // TODO: Improve how we check if the file is a shared memory file.
+        assert(file->ops.read == shared_memory_read);
+        assert(file->ops.write == shared_memory_write);
+        assert(file->ops.close == shared_memory_close);
+
+        shared_memory_t *shared_memory = (shared_memory_t *)file->private_data;
+        assert(shared_memory != NULL);
+
+        for (uint64_t i = 0; i < num_pages; i++) {
+            uint64_t *page_address = 0;
+            assert(vector_get(&shared_memory->pages, i, (void **)&page_address) == 0);
+            assert(vmap_map_page(&process->address_space.page_table, *page_address, address + i * PAGE_SIZE, page_flags) == 0);
+        }
+    } else {
+        // Assume private mapping.
+        for (uint64_t i = 0; i < num_pages; i++) {
+            uint64_t page_address = 0;
+            // TODO: Handle error cases properly.
+            assert(page_alloc_block(PAGE_ALLOC_ORDER_4KB, &page_address) == 0);
+            assert(vmap_map_page(&process->address_space.page_table, page_address, address + i * PAGE_SIZE, page_flags) == 0);
+        }
     }
+
 
     mmap_entry_t *entry = (mmap_entry_t *)kmalloc(sizeof(mmap_entry_t));
     assert(entry != NULL);

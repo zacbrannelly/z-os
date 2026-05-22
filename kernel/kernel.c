@@ -23,6 +23,7 @@
 #include "exception_vector_table.h"
 #include "scheduler/scheduler.h"
 #include "process/process.h"
+#include "files/file_table.h"
 
 #include <libz/syscall.h>
 #include <stddef.h>
@@ -165,6 +166,9 @@ void kernel_main(boot_info_t *boot_info) {
 
     // Bind the USB drivers to the USB devices.
     assert(usb_parse_interfaces() == 0);
+
+    // Initialize the file table.
+    assert(file_table_init() == 0);
 
     // Initialize the scheduler.
     assert(scheduler_init() == 0);

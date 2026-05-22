@@ -13,7 +13,13 @@ uint64_t syscall_mmap_impl(exception_frame_t *frame) {
     thread_t *thread = scheduler_get_current_thread();
     assert(thread != NULL);
     assert(thread->process != NULL);
-    return process_mmap(thread->process, frame->registers[0], frame->registers[1], frame->registers[2]);
+    return process_mmap(
+        thread->process,
+        frame->registers[0],
+        frame->registers[1],
+        frame->registers[2],
+        frame->registers[3]
+    );
 }
 
 void syscall_munmap_impl(exception_frame_t *frame) {

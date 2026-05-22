@@ -4,6 +4,7 @@
 
 #include "../utils/linked_list.h"
 #include "address_space.h"
+#include "fd_table.h"
 
 // Forward declarations.
 typedef struct thread_t thread_t;
@@ -30,6 +31,7 @@ typedef struct process_t {
     address_space_t address_space;
     linked_list_t memory_pages;
     linked_list_t mmap_entries;
+    fd_table_t fd_table;
 } process_t;
 
 int process_init(process_t *process);

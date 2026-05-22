@@ -103,6 +103,10 @@ int process_init(process_t *process) {
         return -1;
     }
 
+    if (fd_table_init(&process->fd_table) < 0) {
+        return -1;
+    }
+
     // Allocate & map the user stack.
     if (allocate_memory_pages(
         process,

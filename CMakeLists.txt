@@ -40,7 +40,8 @@ add_subdirectory(./kernel)
 # Include the bootloader target.
 add_subdirectory(./loader)
 
-# Include hello world program.
+# Include programs to boot on start.
+add_subdirectory(./programs/compositor)
 add_subdirectory(./programs/hello_world)
 
 get_property(KERNEL_ELF TARGET kernel PROPERTY OUTPUT_ELF_PATH)
@@ -53,7 +54,8 @@ add_custom_target(esp
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BOOTLOADER_EFI}" "${ESP_DIR}/EFI/BOOT/BOOTAA64.EFI"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${KERNEL_ELF}" "${ESP_DIR}/kernel.elf"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:hello_world>" "${ESP_DIR}/hello_world.elf"
-    DEPENDS bootloader kernel hello_world
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:compositor>" "${ESP_DIR}/compositor.elf"
+    DEPENDS bootloader kernel hello_world compositor
     COMMENT "Staging boot artifacts into the ESP directory"
     VERBATIM
 )
