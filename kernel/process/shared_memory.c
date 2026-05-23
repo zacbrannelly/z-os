@@ -71,30 +71,28 @@ int shared_memory_open(const char *path, uint64_t size, handle_t *fd) {
     assert(thread != NULL);
     assert(thread->process != NULL);
 
+    file_t *file_object = NULL;
     shared_memory_t *shared_memory = NULL;
     handle_t global_handle = -1;
 
     // Check if the file already exists.
-    file_t *existing_file = NULL;
-    if (file_table_get_by_path(path, &existing_file) == 0) {
-        assert(existing_file != NULL);
-        if (existing_file->ops.read != shared_memory_read) {
+    if (file_table_get_by_path(path, &file_object) == 0) {
+        assert(file_object != NULL);
+        if (file_object->ops.read != shared_memory_read) {
             // File is not a shared memory file.
             return -1;
         }
-        shared_memory = (shared_memory_t *)existing_file->private_data;
-        existing_file->ref_count++;
-        global_handle = existing_file->handle;
+        shared_memory = (shared_memory_t *)file_object->private_data;
+        file_object->ref_count++;
+        global_handle = file_object->handle;
     } else {
         assert(shared_memory_create(path, size, &shared_memory, &global_handle) == 0);
+        assert(file_table_get(global_handle, &file_object) == 0);
     }
 
     assert(shared_memory != NULL);
     assert(global_handle >= 0);
-
-    // Get reference to the file object.
-    file_t *file_object = NULL;
-    assert(file_table_get(global_handle, &file_object) == 0);
+    assert(file_object != NULL);
 
     // Create process file table entry.
     fd_table_t *fd_table = &thread->process->fd_table;

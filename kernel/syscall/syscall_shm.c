@@ -17,7 +17,7 @@ uint64_t syscall_shm_open_impl(exception_frame_t *frame) {
     return shared_memory_open(
         (const char *)frame->registers[0],
         frame->registers[1],
-        (handle_t *)&frame->registers[2]
+        (handle_t *)frame->registers[2]
     );
 }
 

@@ -2,6 +2,8 @@
 
 #include <stddef.h>
 
+#include "../memory.h"
+#include "../assert.h"
 #include "../string.h"
 #include "../kmalloc.h"
 #include "../utils/handle_table.h"
@@ -40,8 +42,14 @@ int file_table_open(const char *path, file_t file, handle_t *handle) {
         return -1;
     }
 
+    char* path_copy = NULL;
     if (path != NULL) {
-        hash_key_t key = hash_key_create_data((void *)path, strlen(path) + 1);
+        // Create copy of the path string.
+        path_copy = (char*)kmalloc(strlen(path) + 1);
+        assert(path_copy != NULL);
+        memory_copy((void*)path_copy, (void*)path, strlen(path) + 1);
+
+        hash_key_t key = hash_key_create_data((void *)path_copy, strlen(path) + 1);
         if (hash_table_set(&g_file_path_table, &key, file_ptr) < 0) {
             handle_table_remove(&g_file_table, *handle);
             kfree(file_ptr);
@@ -50,6 +58,7 @@ int file_table_open(const char *path, file_t file, handle_t *handle) {
     }
 
     *file_ptr = file;
+    file_ptr->path = path_copy;
     file_ptr->handle = *handle;
 
     return 0;
