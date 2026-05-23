@@ -13,7 +13,6 @@
 #include "gfx/font.h"
 #include "ui/cursor.h"
 #include "ui/text_input.h"
-#include "string.h"
 #include "page_alloc.h"
 #include "mmap.h"
 #include "kmalloc.h"
@@ -25,6 +24,7 @@
 #include "process/process.h"
 #include "files/file_table.h"
 
+#include <libz/string.h>
 #include <libz/syscall.h>
 #include <stddef.h>
 

@@ -1,9 +1,9 @@
 #include "acpi.h"
 #include "../../assert.h"
 #include "../../mmap.h"
-#include "../../string.h"
 #include "../../console.h"
 
+#include <libz/string.h>
 #include <stddef.h>
 
 #define ACPI_VIRTUAL_BASE_ADDRESS 0xFFFF300000000000ULL

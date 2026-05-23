@@ -1,12 +1,12 @@
 #include "text_input.h"
 
 #include <stddef.h>
+#include <libz/string.h>
 
 #include "../gfx/gfx.h"
 #include "../gfx/font.h"
 #include "../kmalloc.h"
 #include "../memory.h"
-#include "../string.h"
 #include "../time.h"
 #include "../console.h"
 

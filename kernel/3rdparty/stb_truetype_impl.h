@@ -1,7 +1,7 @@
 #pragma once
 
 #include <openlibm.h>
-#include "../string.h"
+#include <libz/string.h>
 #include "../memory.h"
 #include "../kmalloc.h"
 #include "../assert.h"

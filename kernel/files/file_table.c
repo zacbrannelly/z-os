@@ -1,10 +1,10 @@
 #include "file_table.h"
 
 #include <stddef.h>
+#include <libz/string.h>
 
 #include "../memory.h"
 #include "../assert.h"
-#include "../string.h"
 #include "../kmalloc.h"
 #include "../utils/handle_table.h"
 #include "../utils/hash_table.h"
