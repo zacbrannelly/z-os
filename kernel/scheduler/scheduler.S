@@ -1,3 +1,7 @@
+#include "thread_offsets.h"
+#include "spsr_mode.h"
+#include "thread_state.h"
+
 .global scheduler_switch_to_thread
 .type scheduler_switch_to_thread, %function
 
@@ -47,13 +51,14 @@ loop:
     // Read the SPSR_EL1 from the thread context.
     ldr x3, [sp, #(34 * 8)]
     
-    // Restore the thread's SP from the stack.
+    // Check if the thread is a user thread.
     ldr x1, [sp, #8]
     lsr x2, x1, #63
     cmp x2, #0
     b.eq set_user_sp
 
 set_kernel_sp:
+    // Otherwise, set the thread's SP to the kernel SP.
     mov sp, x1
     b jump_to_thread
 
@@ -69,3 +74,41 @@ jump_to_thread:
 
     // Start / Resume the thread.
     eret
+
+.global scheduler_save_and_block
+.type scheduler_save_and_block, %function
+
+// void scheduler_save_and_block(thread_t *thread);
+scheduler_save_and_block:
+    // x1 = &thread->ctx.registers[0]
+    add x1, x0, #THREAD_CTX_REGS_OFF
+
+    // Save registers 19..30 as per the AArch64 ABI.
+    // thread->ctx.registers[19..30] = x19..x30
+    stp x19, x20, [x1, #(19 * 8)]
+    stp x21, x22, [x1, #(21 * 8)]
+    stp x23, x24, [x1, #(23 * 8)]
+    stp x25, x26, [x1, #(25 * 8)]
+    stp x27, x28, [x1, #(27 * 8)]
+    stp x29, x30, [x1, #(29 * 8)]
+
+    // thread->ctx.sp = sp
+    mov x2, sp
+    str x2, [x0, #THREAD_CTX_SP_OFF]
+
+    // thread->ctx.elr = lr
+    str x30, [x0, #THREAD_CTX_ELR_OFF]
+
+    // thread->ctx.spsr = SPSR_MODE_EL1_H
+    mov w2, #SPSR_MODE_EL1_H
+    str x2, [x0, #THREAD_CTX_SPSR_OFF]
+
+    // thread->state = THREAD_STATE_BLOCKED
+    mov w2, #THREAD_STATE_ENUM_BLOCKED
+    str w2, [x0, #THREAD_STATE_OFF]
+    
+    // mmap_apply_mappings() - restore the kernel VA mapping.
+    bl mmap_apply_mappings
+
+    // scheduler_run() - run the scheduler.
+    b scheduler_run

@@ -3,6 +3,8 @@
 #include <libz/malloc.h>
 #include <libz/shm.h>
 #include <libz/mmap.h>
+#include <libz/string.h>
+#include <libz/channel.h>
 
 int main(void) {
     // Open shared memory object for a window.
@@ -51,6 +53,23 @@ int main(void) {
     *(char *)(address + 26) = 't';
     *(char *)(address + 29) = '\0';
     syscall_console_write("hello_world: message written to shared memory object\r\n");
+
+    // Yield so the compositor can setup the channel.
+    syscall_yield();
+
+    handle_t channel_fd;
+    if (channel_open("compositor/channel/0", &channel_fd) != 0) {
+        syscall_console_write("hello_world: channel_open failed\r\n");
+        return 1;
+    }
+    syscall_console_write("hello_world: channel_open succeeded\r\n");
+
+    const char *message = "Hello, channel messages!!";
+    if (channel_send(channel_fd, (void *)message, strlen(message) + 1) < 0) {
+        syscall_console_write("hello_world: channel_send failed\r\n");
+        return 1;
+    }
+    syscall_console_write("hello_world: channel_send succeeded\r\n");
 
     return 0;
 }

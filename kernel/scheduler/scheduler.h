@@ -15,6 +15,12 @@ thread_t *scheduler_get_current_thread(void);
 // Yield the current thread.
 void scheduler_yield(exception_frame_t *frame);
 
+// Wait for an event to occur.
+void scheduler_wait_for_event(void);
+
+// Wake up a thread.
+void scheduler_wake_up(thread_t *thread);
+
 // Terminate the current thread.
 void scheduler_terminate(void);
 

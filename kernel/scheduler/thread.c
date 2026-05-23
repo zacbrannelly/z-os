@@ -2,10 +2,9 @@
 #include "scheduler.h"
 
 #include "../memory.h"
+#include "../kmalloc.h"
 
-#define SPSR_MODE_EL0   0x0 // User mode
-#define SPSR_MODE_EL1_T 0x4 // Kernel mode (but use user stack)
-#define SPSR_MODE_EL1_H 0x5 // Kernel mode (use kernel stack)
+#define KERNEL_STACK_SIZE (8 * 4096)
 
 int thread_init(
     thread_t *thread,
@@ -17,6 +16,13 @@ int thread_init(
     thread->stack_top = stack_top;
     thread->type = type;
     thread->state = THREAD_STATE_READY;
+
+    // Allocate some stack space used when in kernel mode.
+    uint64_t kernel_stack = (uint64_t)kmalloc(KERNEL_STACK_SIZE);
+    if (kernel_stack == 0) {
+        return -1;
+    }
+    thread->kernel_stack_top = kernel_stack + KERNEL_STACK_SIZE;
 
     // Prepare context for the thread.
     thread->ctx.entry_point = entry_point;

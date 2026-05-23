@@ -76,9 +76,18 @@ handle_sync:
     stp x28, x29, [sp, #(14 * 16)]
     stp x30, xzr, [sp, #(15 * 16)]
 
+    // Store the thread's SP in the frame (this may be SP_EL0 or SP_EL1 depending on the thread's mode).
+    mrs x0, SPSR_EL1
+    and x0, x0, #0xF
+    cbnz x0, store_sp_el1
+    mrs x0, SP_EL0
+    b store_x0_as_sp
+store_sp_el1:
+    add x0, sp, #(35 * 8)
+store_x0_as_sp:
+    str x0, [sp, #(32 * 8)]
+    
     // Store other useful metadata on the stack.
-    add x0, sp, #(35 * 8)         // Calculate the original SP.
-    str x0,       [sp, #(32 * 8)]
     mrs x0, ELR_EL1
     str x0,       [sp, #(33 * 8)]
     mrs x0, SPSR_EL1
@@ -88,6 +97,21 @@ handle_sync:
     mov x0, sp
     mrs x1, ESR_EL1
     bl handle_sync_exception
+
+    // Restore the SPSR_EL1.
+    ldr x0, [sp, #(34 * 8)]
+    msr SPSR_EL1, x0
+
+    // If the exception came from EL0, restore SP_EL0 form the saved frame.
+    and x1, x0, #0xF
+    cbnz x1, skip_sp_el0_restore
+    ldr x1, [sp, #(32 * 8)] // x1 = frame->sp
+    msr SP_EL0, x1
+
+skip_sp_el0_restore:
+    // Restore the ELR_EL1.
+    ldr x0, [sp, #(33 * 8)]
+    msr ELR_EL1, x0
 
     // Restore the previous registers.
     ldp x0,  x1,  [sp, #(0 * 16)]

@@ -2,6 +2,8 @@
 #include <libz/syscall.h>
 #include <libz/shm.h>
 #include <libz/mmap.h>
+#include <libz/channel.h>
+#include <libz/memory.h>
 
 int main(void) {
     // Create shared memory object for a window.
@@ -24,6 +26,26 @@ int main(void) {
     char *message = (char *)address;
     syscall_console_write("compositor: message: ");
     syscall_console_write(message);
+    syscall_console_write("\r\n");
+
+    handle_t channel_fd;
+    if (channel_open("compositor/channel/0", &channel_fd) != 0) {
+        syscall_console_write("compositor: channel_open failed\r\n");
+        return 1;
+    }
+    syscall_console_write("compositor: channel_open succeeded\r\n");
+
+    char channel_buffer[100];
+    memory_set((void *)channel_buffer, 0, sizeof(channel_buffer));
+
+    if (channel_recv(channel_fd, channel_buffer, sizeof(channel_buffer)) != 0) {
+        syscall_console_write("compositor: channel_recv failed\r\n");
+        return 1;
+    }
+
+    syscall_console_write("compositor: channel_recv succeeded\r\n");
+    syscall_console_write("compositor: message: ");
+    syscall_console_write(channel_buffer);
     syscall_console_write("\r\n");
 
     return 0;

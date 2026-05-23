@@ -8,9 +8,9 @@
 #include "../mmap.h"
 #include "../process/process.h"
 #include "../exception_vector_table.h"
+#include "thread_offsets.h"
 
 typedef struct scheduler_t {
-    uint64_t kernel_stack_top;
     thread_t *current_thread;
     linked_list_t run_queue;
     thread_t idle_thread;
@@ -20,6 +20,9 @@ static scheduler_t g_scheduler;
 
 #define KERNEL_STACK_SIZE (8 * 4096)
 
+// Forward declarations.
+void scheduler_save_and_block(thread_t *thread);
+
 static void idle_thread_entry(void) {
     while (1) {
         __asm__ volatile("wfe");
@@ -28,13 +31,6 @@ static void idle_thread_entry(void) {
 
 int scheduler_init(void) {
     memory_set(&g_scheduler, 0, sizeof(scheduler_t));
-
-    // Allocate the kernel stack.
-    g_scheduler.kernel_stack_top = (uint64_t)kmalloc(KERNEL_STACK_SIZE);
-    if (g_scheduler.kernel_stack_top == 0) {
-        return -1;
-    }
-    g_scheduler.kernel_stack_top += KERNEL_STACK_SIZE;
 
     linked_list_init(&g_scheduler.run_queue);
     g_scheduler.current_thread = NULL;
@@ -75,23 +71,20 @@ thread_t *scheduler_get_current_thread(void) {
     return g_scheduler.current_thread;
 }
 
-static void restore_kernel_stack(void) {
-    __asm__ volatile("mov sp, %0" : : "r" (g_scheduler.kernel_stack_top));
-}
-
-static void store_kernel_stack(void) {
-    __asm__ volatile("mov %0, sp" : "=r" (g_scheduler.kernel_stack_top));
-}
-
 static void __attribute__((noreturn)) context_switch(thread_t *next_thread) {
-    store_kernel_stack();
-
     if (next_thread->process != NULL) {
         assert(vmap_apply_table(&next_thread->process->address_space.page_table, VMAP_DESTINATION_USER) == 0);
     }
 
-    register uint64_t x0 asm("x0") = (uint64_t)&next_thread->ctx;
-    __asm__ volatile("b scheduler_switch_to_thread" : : "r" (x0) : "memory");
+    // Switch stack pointer to the next thread's kernel stack.
+    // Then do a context switch to the next thread.
+    register uint64_t ctx_ptr asm("x0") = (uint64_t)&next_thread->ctx;
+    register uint64_t new_sp asm("x1") = next_thread->kernel_stack_top;
+    __asm__ volatile(
+        "mov sp, %0\n\t"
+        "b scheduler_switch_to_thread\n\t"
+        : : "r" (new_sp), "r" (ctx_ptr) : "memory");
+
     __builtin_unreachable();
 }
 
@@ -126,8 +119,6 @@ void scheduler_run(void) {
 }
 
 void scheduler_yield(exception_frame_t *frame) {
-    restore_kernel_stack();
-
     thread_t *current_thread = g_scheduler.current_thread;
     assert(current_thread != NULL);
 
@@ -148,13 +139,25 @@ void scheduler_yield(exception_frame_t *frame) {
     // Restore the kernel VA mapping.
     assert(mmap_apply_mappings() == 0);
 
-    // Run the scheduler.
+    // Context switch (or resume if no other threads)
     scheduler_run();
 }
 
-void scheduler_terminate(void) {
-    restore_kernel_stack();
+void scheduler_wait_for_event(void) {
+    scheduler_save_and_block(g_scheduler.current_thread);
+}
 
+void scheduler_wake_up(thread_t *thread) {
+    assert(thread->state == THREAD_STATE_BLOCKED);
+
+    // Mark the thread SUSPENDED (like it has been yielded).
+    thread->state = THREAD_STATE_SUSPENDED;
+
+    // Add the thread back to the run queue.
+    scheduler_add_thread(thread);
+}
+
+void scheduler_terminate(void) {
     // Mark the thread TERMINATED.
     g_scheduler.current_thread->state = THREAD_STATE_TERMINATED;
 

@@ -11,6 +11,7 @@
 #include "syscall_exit.h"
 #include "syscall_mmap.h"
 #include "syscall_shm.h"
+#include "syscall_channel.h"
 
 void syscall_handler(exception_frame_t *frame) {
     uint64_t syscall_idx = frame->registers[8];
@@ -35,6 +36,18 @@ void syscall_handler(exception_frame_t *frame) {
             break;
         case SYSCALL_SHM_UNLINK:
             frame->registers[0] = syscall_shm_unlink_impl(frame);
+            break;
+        case SYSCALL_CHANNEL_OPEN:
+            frame->registers[0] = syscall_channel_open_impl(frame);
+            break;
+        case SYSCALL_CHANNEL_CLOSE:
+            frame->registers[0] = syscall_channel_close_impl(frame);
+            break;
+        case SYSCALL_CHANNEL_SEND:
+            frame->registers[0] = syscall_channel_send_impl(frame);
+            break;
+        case SYSCALL_CHANNEL_RECV:
+            frame->registers[0] = syscall_channel_recv_impl(frame);
             break;
         default:
             console_write("Unknown syscall index: ");

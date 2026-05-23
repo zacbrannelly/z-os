@@ -4,12 +4,16 @@
 #include <libz/handle.h>
 
 #define SYSCALL_CONSOLE_WRITE 0x1
-#define SYSCALL_YIELD 0x2
-#define SYSCALL_EXIT 0x3
-#define SYSCALL_MMAP 0x4
-#define SYSCALL_MUNMAP 0x5
-#define SYSCALL_SHM_OPEN 0x6
-#define SYSCALL_SHM_UNLINK 0x7
+#define SYSCALL_YIELD         0x2
+#define SYSCALL_EXIT          0x3
+#define SYSCALL_MMAP          0x4
+#define SYSCALL_MUNMAP        0x5
+#define SYSCALL_SHM_OPEN      0x6
+#define SYSCALL_SHM_UNLINK    0x7
+#define SYSCALL_CHANNEL_OPEN  0x8
+#define SYSCALL_CHANNEL_CLOSE 0x9
+#define SYSCALL_CHANNEL_SEND  0xA
+#define SYSCALL_CHANNEL_RECV  0xB
 
 /**
 * Calling conventions 
@@ -62,4 +66,20 @@ static inline uint64_t syscall_shm_open(const char *path, uint64_t size, handle_
 
 static inline uint64_t syscall_shm_unlink(const char *path) {
     return syscall_call(SYSCALL_SHM_UNLINK, (uint64_t)path, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_channel_open(const char *path, handle_t *fd) {
+    return syscall_call(SYSCALL_CHANNEL_OPEN, (uint64_t)path, (uint64_t)fd, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_channel_close(handle_t fd) {
+    return syscall_call(SYSCALL_CHANNEL_CLOSE, (uint64_t)fd, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_channel_send(handle_t fd, const void *data, uint64_t size) {
+    return syscall_call(SYSCALL_CHANNEL_SEND, (uint64_t)fd, (uint64_t)data, size, 0, 0, 0);
+}
+
+static inline uint64_t syscall_channel_recv(handle_t fd, void *data, uint64_t size) {
+    return syscall_call(SYSCALL_CHANNEL_RECV, (uint64_t)fd, (uint64_t)data, size, 0, 0, 0);
 }
