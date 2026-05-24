@@ -5,6 +5,9 @@ set(CMAKE_ASM_COMPILER gcc CACHE STRING "ASM compiler" FORCE)
 
 project(z_os LANGUAGES C ASM)
 
+# Build options
+option(ZOS_RUN_TESTS "Run tests only on boot" OFF)
+
 # General CMake configuration for the in-container build.
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -44,6 +47,9 @@ add_subdirectory(./loader)
 add_subdirectory(./programs/compositor)
 add_subdirectory(./programs/hello_world)
 
+# Include test programs.
+add_subdirectory(./tests)
+
 get_property(KERNEL_ELF TARGET kernel PROPERTY OUTPUT_ELF_PATH)
 get_property(BOOTLOADER_EFI TARGET bootloader PROPERTY OUTPUT_EFI_PATH)
 
@@ -55,6 +61,7 @@ add_custom_target(esp
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${KERNEL_ELF}" "${ESP_DIR}/kernel.elf"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:hello_world>" "${ESP_DIR}/hello_world.elf"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:compositor>" "${ESP_DIR}/compositor.elf"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:tests>" "${ESP_DIR}/tests.elf"
     DEPENDS bootloader kernel hello_world compositor
     COMMENT "Staging boot artifacts into the ESP directory"
     VERBATIM

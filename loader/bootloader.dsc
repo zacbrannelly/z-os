@@ -7,6 +7,7 @@
   SUPPORTED_ARCHITECTURES        = AARCH64
   BUILD_TARGETS                  = DEBUG|RELEASE
   SKUID_IDENTIFIER               = DEFAULT
+  RUN_TESTS                      = 0
 
 [LibraryClasses]
   UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
@@ -25,3 +26,6 @@
 
 [Components]
   bootloader/loader/bootloader.inf
+
+[BuildOptions]
+  *_*_*_CC_FLAGS = -D RUN_TESTS=$(RUN_TESTS)

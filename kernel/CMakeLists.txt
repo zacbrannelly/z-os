@@ -31,6 +31,10 @@ target_compile_options(kernel_objects PRIVATE
     -fno-pic
 )
 
+if(ZOS_RUN_TESTS)
+    target_compile_definitions(kernel_objects PUBLIC RUN_TESTS=1)
+endif()
+
 set(KERNEL_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/kernel/linker.ld")
 set(KERNEL_ELF "${CMAKE_BINARY_DIR}/artifacts/kernel.elf")
 

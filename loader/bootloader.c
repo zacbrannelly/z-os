@@ -164,26 +164,54 @@ static const boot_module_info_t g_boot_modules_to_load[] = {
   { "compositor", L"compositor.elf" }
 };
 
+static const boot_module_info_t g_boot_modules_to_load_tests[] = {
+  { "tests", L"tests.elf" }
+};
+
+static EFI_STATUS load_boot_module(
+  const boot_module_info_t *boot_module,
+  EFI_SYSTEM_TABLE *system_table,
+  EFI_FILE_PROTOCOL *file_protocol,
+  boot_info_t *boot_info
+) {
+  uint8_t *boot_module_buffer = NULL;
+  UINTN boot_module_size = 0;
+  EFI_STATUS status = load_file(system_table, file_protocol, boot_module->path, &boot_module_buffer, &boot_module_size);
+  if (EFI_ERROR(status)) {
+    Print(L"Failed to load boot module: %r\r\n", status);
+    return status;
+  }
+
+  AsciiStrCpyS(boot_info->boot_modules[boot_info->num_boot_modules].name, 50, boot_module->name);
+  boot_info->boot_modules[boot_info->num_boot_modules].elf_buffer = boot_module_buffer;
+  boot_info->boot_modules[boot_info->num_boot_modules].elf_size = boot_module_size;
+  boot_info->num_boot_modules++;
+
+  return EFI_SUCCESS;
+} 
+
 static EFI_STATUS load_boot_modules(
   EFI_SYSTEM_TABLE *system_table,
   EFI_FILE_PROTOCOL *file_protocol,
   boot_info_t *boot_info
 ) {
   EFI_STATUS status = EFI_SUCCESS;
-  for (int i = 0; i < sizeof(g_boot_modules_to_load) / sizeof(boot_module_info_t); i++) {
-    const boot_module_info_t *boot_module = &g_boot_modules_to_load[i];
-    uint8_t *boot_module_buffer = NULL;
-    UINTN boot_module_size = 0;
-    status = load_file(system_table, file_protocol, boot_module->path, &boot_module_buffer, &boot_module_size);
+
+#if RUN_TESTS == 1
+  int num_boot_modules = sizeof(g_boot_modules_to_load_tests) / sizeof(boot_module_info_t);
+  const boot_module_info_t *boot_modules = g_boot_modules_to_load_tests;
+#else
+  int num_boot_modules = sizeof(g_boot_modules_to_load) / sizeof(boot_module_info_t);
+  const boot_module_info_t *boot_modules = g_boot_modules_to_load;
+#endif
+
+  for (int i = 0; i < num_boot_modules; i++) {
+    const boot_module_info_t *boot_module = &boot_modules[i];
+    status = load_boot_module(boot_module, system_table, file_protocol, boot_info);
     if (EFI_ERROR(status)) {
       Print(L"Failed to load boot module: %r\r\n", status);
       return status;
     }
-
-    AsciiStrCpyS(boot_info->boot_modules[i].name, 50, boot_module->name);
-    boot_info->boot_modules[i].elf_buffer = boot_module_buffer;
-    boot_info->boot_modules[i].elf_size = boot_module_size;
-    boot_info->num_boot_modules++;
   }
 
   return status;

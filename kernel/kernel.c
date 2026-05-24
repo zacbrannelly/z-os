@@ -174,6 +174,7 @@ void kernel_main(boot_info_t *boot_info) {
     assert(scheduler_init() == 0);
 
     // Schedule the main kernel thread.
+#if RUN_TESTS == 0
     uint64_t kernel_thread_stack = (uint64_t)kmalloc(4096);
     thread_t kernel_thread;
     assert(thread_init(&kernel_thread, (uint64_t)kernel_thread_entry, kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
@@ -184,6 +185,7 @@ void kernel_main(boot_info_t *boot_info) {
     thread_t console_kernel_thread;
     assert(thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
     assert(thread_start(&console_kernel_thread) == 0);
+#endif
 
     for (int i = 0; i < boot_info->num_boot_modules; i++) {
         boot_module_t *boot_module = &boot_info->boot_modules[i];
