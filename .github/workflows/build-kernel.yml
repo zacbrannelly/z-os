@@ -20,7 +20,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-efi-aarch64
 
       - name: Build Docker image
-        run: docker build -t z-os-dev:ci .
+        run: docker build -t z-os-dev:latest .
 
       - name: Build kernel and run tests in QEMU
         run: ./run_tests.sh
