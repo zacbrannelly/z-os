@@ -16,25 +16,20 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install QEMU
+        run: sudo apt-get install -y qemu-system-arm qemu-efi-aarch64
+
       - name: Build Docker image
         run: docker build -t z-os-dev:ci .
 
-      - name: Build bootloader and kernel in container
-        run: |
-          mkdir -p build/edk2 build/cmake/release esp
-          docker run --rm \
-            -v "${{ github.workspace }}:/opt/edk2/bootloader" \
-            -v "${{ github.workspace }}/build/edk2:/opt/edk2/Build/bootloader" \
-            -v "${{ github.workspace }}/esp:/esp" \
-            -w /opt/edk2 \
-            z-os-dev:ci \
-            bash -lc "./bootloader/scripts/build_entrypoint.sh"
+      - name: Build kernel and run tests in QEMU
+        run: ./run_tests.sh
 
       - name: Upload kernel artifact
         uses: actions/upload-artifact@v4
         with:
           name: kernel-elf
-          path: build/cmake/release/artifacts/kernel.elf
+          path: esp/kernel.elf
           if-no-files-found: error
 
       - name: Upload bootloader artifact

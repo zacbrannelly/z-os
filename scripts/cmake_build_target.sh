@@ -14,6 +14,7 @@ cmake \
   -S "${repo_root}" \
   -B "${build_dir}" \
   -DCMAKE_BUILD_TYPE="${cmake_build_type}" \
-  -DEDK2_BUILD_TARGET="${edk2_build_target}"
+  -DEDK2_BUILD_TARGET="${edk2_build_target}" \
+  -DZOS_RUN_TESTS="${ZOS_RUN_TESTS:-OFF}"
 
 cmake --build "${build_dir}" --target "${target_name}"
