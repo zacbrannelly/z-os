@@ -17,7 +17,7 @@ jobs:
           submodules: recursive
 
       - name: Install QEMU
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-efi-aarch64
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 seabios
 
       - name: Build Docker image
         run: docker build -t z-os-dev:latest .
