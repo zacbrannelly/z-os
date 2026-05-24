@@ -14,7 +14,7 @@ fi
 
 mkdir -p "$(pwd)/build/${edk2_subdir}" "$(pwd)/build/cmake/${cmake_subdir}" "$(pwd)/esp"
 
-docker run --rm -it \
+docker run --rm \
     -v $(pwd):/opt/edk2/bootloader \
     -v $(pwd)/build/${edk2_subdir}:/opt/edk2/Build/bootloader \
     -v $(pwd)/esp:/esp \
