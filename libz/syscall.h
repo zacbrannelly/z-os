@@ -14,6 +14,7 @@
 #define SYSCALL_CHANNEL_CLOSE 0x9
 #define SYSCALL_CHANNEL_SEND  0xA
 #define SYSCALL_CHANNEL_RECV  0xB
+#define SYSCALL_SHUTDOWN      0xC
 
 /**
 * Calling conventions 
@@ -82,4 +83,8 @@ static inline uint64_t syscall_channel_send(handle_t fd, const void *data, uint6
 
 static inline uint64_t syscall_channel_recv(handle_t fd, void *data, uint64_t size) {
     return syscall_call(SYSCALL_CHANNEL_RECV, (uint64_t)fd, (uint64_t)data, size, 0, 0, 0);
+}
+
+static inline uint64_t syscall_shutdown(void) {
+    return syscall_call(SYSCALL_SHUTDOWN, 0, 0, 0, 0, 0, 0);
 }

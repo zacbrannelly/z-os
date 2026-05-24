@@ -49,6 +49,9 @@ void syscall_handler(exception_frame_t *frame) {
         case SYSCALL_CHANNEL_RECV:
             frame->registers[0] = syscall_channel_recv_impl(frame);
             break;
+        case SYSCALL_SHUTDOWN:
+            frame->registers[0] = syscall_shutdown_impl(frame);
+            break;
         default:
             console_write("Unknown syscall index: ");
             console_write_hex(syscall_idx);

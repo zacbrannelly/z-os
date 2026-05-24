@@ -28,4 +28,5 @@ static inline void run_tests(void) {
         syscall_console_write("\r\n");
     }
     syscall_console_write("All tests passed\r\n");
+    syscall_shutdown();
 }
