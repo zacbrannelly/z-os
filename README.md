@@ -18,5 +18,5 @@ First build development environment Docker image:
 Then build and run the project in QEMU:
 
 ```bash
-./build_and_run.sh
+./run.sh
 ```
