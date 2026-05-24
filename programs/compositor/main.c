@@ -38,7 +38,7 @@ int main(void) {
     char channel_buffer[100];
     memory_set((void *)channel_buffer, 0, sizeof(channel_buffer));
 
-    if (channel_recv(channel_fd, channel_buffer, sizeof(channel_buffer)) != 0) {
+    if (channel_recv(channel_fd, channel_buffer, sizeof(channel_buffer)) < 0) {
         syscall_console_write("compositor: channel_recv failed\r\n");
         return 1;
     }

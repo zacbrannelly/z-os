@@ -13,6 +13,11 @@
 #include "../scheduler/thread.h"
 #include "../scheduler/scheduler.h"
 
+typedef struct channel_message_t {
+    uint8_t *data;
+    uint64_t size;
+} channel_message_t;
+
 static int channel_create(const char *path, channel_t **channel_ptr, handle_t *global_handle) {
     if (path == NULL || channel_ptr == NULL || global_handle == NULL) {
         return -1;
@@ -151,20 +156,29 @@ int channel_file_read(file_t *file, void *data, uint64_t size) {
         scheduler_wait_for_event();
     }
 
-    // Pop the message off the list.
+    // Peek at the message.
     linked_list_node_t *message_node = channel->messages.head;
-    linked_list_remove(&channel->messages, message_node);
 
     // Copy the message to the user space.
-    uint8_t *message = (uint8_t *)message_node->data;
-    assert(message != NULL);
-    memory_copy(data, message, size);
+    channel_message_t *message_object = (channel_message_t *)message_node->data;
+    assert(message_object != NULL);
+
+    if (message_object->size > size) {
+        // TODO: Return more descriptive error code.
+        return -1;
+    }
+
+    memory_copy(data, message_object->data, message_object->size);
 
     // Free the message (from the kernel space).
-    kfree(message);
+    kfree(message_object->data);
+    kfree(message_object);
 
-    // TODO: Using this as status code for now, but POSIX returns the number of bytes read.
-    return 0;
+    // Pop the message off the list.
+    linked_list_remove(&channel->messages, message_node);
+
+    // Return the number of bytes read.
+    return message_object->size;
 }
 
 int channel_file_write(file_t *file, const void *data, uint64_t size) {
@@ -181,10 +195,16 @@ int channel_file_write(file_t *file, const void *data, uint64_t size) {
     // Copy the message to kernel memory.
     memory_copy((void *)message, (void *)data, size);
 
+    channel_message_t *message_object = (channel_message_t *)kmalloc(sizeof(channel_message_t));
+    assert(message_object != NULL);
+    message_object->data = message;
+    message_object->size = size;
+
     // Add the message to the channel.
     linked_list_node_t *node = NULL;
-    if (linked_list_insert(&channel->messages, message, &node) < 0) {
+    if (linked_list_insert(&channel->messages, message_object, &node) < 0) {
         kfree(message);
+        kfree(message_object);
         return -1;
     }
 
