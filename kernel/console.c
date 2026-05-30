@@ -1,5 +1,5 @@
 #include "console.h"
-#include "format.h"
+#include <libz/format.h>
 #include <stddef.h>
 
 static console_t *g_console = NULL;

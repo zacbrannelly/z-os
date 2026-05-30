@@ -14,6 +14,7 @@ add_executable(compositor
 target_include_directories(compositor PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/libraries"
 )
 
 target_compile_options(compositor PRIVATE
@@ -33,6 +34,7 @@ target_link_options(compositor PRIVATE
 
 target_link_libraries(compositor PRIVATE
     libz
+    libgfx
     "${LIBGCC_FILE}"
 )
 

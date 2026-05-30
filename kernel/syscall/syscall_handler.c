@@ -12,6 +12,7 @@
 #include "syscall_mmap.h"
 #include "syscall_shm.h"
 #include "syscall_channel.h"
+#include "syscall_shutdown.h"
 
 void syscall_handler(exception_frame_t *frame) {
     uint64_t syscall_idx = frame->registers[8];

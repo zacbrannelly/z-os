@@ -1,19 +1,19 @@
 #include "bitmap.h"
+#include "gfx_alloc.h"
 
-#include "../kmalloc.h"
-#include "../assert.h"
+#include <libz/assert.h>
 #include <stddef.h>
 
 bitmap_t *bitmap_create(uint32_t width, uint32_t height, bitmap_pixel_format_t pixel_format) {
-    bitmap_t *bitmap = (bitmap_t *)kmalloc(sizeof(bitmap_t));
+    bitmap_t *bitmap = (bitmap_t *)gfx_alloc(sizeof(bitmap_t));
     if (bitmap == NULL) {
         return NULL;
     }
 
     uint32_t stride = width * bitmap_pixel_format_size(pixel_format);
-    bitmap->data = (uint8_t *)kmalloc(height * stride);
+    bitmap->data = (uint8_t *)gfx_alloc(height * stride);
     if (bitmap->data == NULL) {
-        kfree(bitmap);
+        gfx_free(bitmap);
         return NULL;
     }
 
@@ -27,7 +27,7 @@ bitmap_t *bitmap_create(uint32_t width, uint32_t height, bitmap_pixel_format_t p
 }
 
 bitmap_t *bitmap_from_data(uint8_t *data, uint32_t width, uint32_t height, bitmap_pixel_format_t pixel_format) {
-    bitmap_t *bitmap = (bitmap_t *)kmalloc(sizeof(bitmap_t));
+    bitmap_t *bitmap = (bitmap_t *)gfx_alloc(sizeof(bitmap_t));
     if (bitmap == NULL) {
         return NULL;
     }
@@ -55,7 +55,7 @@ uint32_t bitmap_pixel_format_size(bitmap_pixel_format_t pixel_format) {
 
 void bitmap_destroy(bitmap_t *bitmap) {
     if (bitmap->is_data_owned) {
-        kfree(bitmap->data);
+        gfx_free(bitmap->data);
     }
-    kfree(bitmap);
+    gfx_free(bitmap);
 }

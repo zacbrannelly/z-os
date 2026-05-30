@@ -1,6 +1,5 @@
 #include "mmap.h"
 #include "bump_allocator.h"
-#include "format.h"
 #include "console.h"
 #include "math.h"
 #include "memory.h"

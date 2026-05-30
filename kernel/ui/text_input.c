@@ -2,9 +2,9 @@
 
 #include <stddef.h>
 #include <libz/string.h>
+#include <libgfx/font.h>
 
 #include "../gfx/gfx.h"
-#include "../gfx/font.h"
 #include "../kmalloc.h"
 #include "../memory.h"
 #include "../time.h"
@@ -267,7 +267,8 @@ int text_input_draw(text_input_t *text_input) {
 
     // Draw the content of the text input.
     if (strlen(text_input->text) > 0) {
-        font_draw_text(
+        font_draw_text_bitmap(
+            gfx_get_back_framebuffer(),
             text_input->text,
             text_input->position.x,
             text_input->position.y + font_get_ascent(),

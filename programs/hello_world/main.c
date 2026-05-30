@@ -5,23 +5,24 @@
 #include <libz/mmap.h>
 #include <libz/string.h>
 #include <libz/channel.h>
+#include <libz/console.h>
 
 int main(void) {
     // Open shared memory object for a window.
     handle_t fd;
     if (shm_open("compositor/window/0", 1024, &fd) != 0) {
-        syscall_console_write("compositor: shm_open failed\r\n");
+        console_write("compositor: shm_open failed\r\n");
         return 1;
     }
-    syscall_console_write("hello_world: shm_open succeeded\r\n");
+    console_write("hello_world: shm_open succeeded\r\n");
 
     // Map the shared memory object to the process's address space.
     void *address = (void *)mmap(0, 1024, MAP_SHARED | MAP_READ | MAP_WRITE, fd);
     if (address == NULL) {
-        syscall_console_write("hello_world: mmap failed\r\n");
+        console_write("hello_world: mmap failed\r\n");
         return 1;
     }
-    syscall_console_write("hello_world: mmap succeeded\r\n");
+    console_write("hello_world: mmap succeeded\r\n");
 
     // Write a message into the shared memory object.
     *(char *)address = 'H';
@@ -52,24 +53,24 @@ int main(void) {
     *(char *)(address + 25) = 'c';
     *(char *)(address + 26) = 't';
     *(char *)(address + 29) = '\0';
-    syscall_console_write("hello_world: message written to shared memory object\r\n");
+    console_write("hello_world: message written to shared memory object\r\n");
 
     // Yield so the compositor can setup the channel.
     syscall_yield();
 
     handle_t channel_fd;
     if (channel_open("compositor/channel/0", &channel_fd) != 0) {
-        syscall_console_write("hello_world: channel_open failed\r\n");
+        console_write("hello_world: channel_open failed\r\n");
         return 1;
     }
-    syscall_console_write("hello_world: channel_open succeeded\r\n");
+    console_write("hello_world: channel_open succeeded\r\n");
 
     const char *message = "Hello, channel messages!!";
     if (channel_send(channel_fd, (void *)message, strlen(message) + 1) < 0) {
-        syscall_console_write("hello_world: channel_send failed\r\n");
+        console_write("hello_world: channel_send failed\r\n");
         return 1;
     }
-    syscall_console_write("hello_world: channel_send succeeded\r\n");
+    console_write("hello_world: channel_send succeeded\r\n");
 
     return 0;
 }

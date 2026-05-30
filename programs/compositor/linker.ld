@@ -11,6 +11,12 @@ SECTIONS
 {
   . = 0x400000;
 
+  /* Pin note sections to the text PHDR. Without an explicit :phdr, ld places
+     allocated note sections into every PT_LOAD whose flags match, which
+     causes the data PT_LOAD to start at the same vaddr as text and overlap. */
+  .note.gnu.build-id : ALIGN(4) { *(.note.gnu.build-id) } :text
+  .note             : ALIGN(4) { *(.note .note.*)     } :text
+
   .text : ALIGN(4096)
   {
     *(.text .text.*)

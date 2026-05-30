@@ -18,6 +18,7 @@ target_include_directories(kernel_objects PRIVATE
     "${CMAKE_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}/3rdparty/openlibm/include"
     "${CMAKE_SOURCE_DIR}/3rdparty/openlibm/src"
+    "${CMAKE_SOURCE_DIR}/libraries"
 )
 
 # Match the historical freestanding kernel compile flags as closely as possible.
@@ -45,11 +46,16 @@ add_custom_target(kernel ALL
     COMMAND /usr/bin/ld
         -T "${KERNEL_LINKER_SCRIPT}"
         -o "${KERNEL_ELF}"
+        -z max-page-size=0x1000
+        -z common-page-size=0x1000
         $<TARGET_OBJECTS:kernel_objects>
+        "$<TARGET_FILE:libz>"
+        "$<TARGET_FILE:libgfx>"
         "$<TARGET_FILE:openlibm>"
         "${LIBGCC_FILE}"
     DEPENDS
         kernel_objects
+        libz
         openlibm
         "${KERNEL_LINKER_SCRIPT}"
     COMMENT "Linking kernel.elf with ld"

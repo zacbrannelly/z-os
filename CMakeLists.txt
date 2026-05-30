@@ -14,6 +14,12 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Make sure the linker is aware of the page size we support (4096).
+add_link_options(
+    -Wl,-z,max-page-size=0x1000
+    -Wl,-z,common-page-size=0x1000
+)
+
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
     message(FATAL_ERROR "This build is currently configured to require GCC, but CMake selected ${CMAKE_C_COMPILER_ID}.")
 endif()
@@ -36,6 +42,9 @@ add_subdirectory(./3rdparty)
 
 # Include the libz library (our version of libc).
 add_subdirectory(./libz)
+
+# Include userland libraries (e.g. libgfx)
+add_subdirectory(./libraries)
 
 # Include the kernel target.
 add_subdirectory(./kernel)

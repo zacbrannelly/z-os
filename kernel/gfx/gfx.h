@@ -1,7 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-#include "colors.h"
+#include <libgfx/colors.h>
 
 // Forward declarations.
 typedef struct boot_info_t boot_info_t;

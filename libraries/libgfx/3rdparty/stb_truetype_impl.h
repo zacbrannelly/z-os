@@ -2,9 +2,9 @@
 
 #include <openlibm.h>
 #include <libz/string.h>
-#include "../memory.h"
-#include "../kmalloc.h"
-#include "../assert.h"
+#include <libz/memory.h>
+#include <libz/assert.h>
+#include "../gfx_alloc.h"
 
 typedef unsigned char   stbtt_uint8;
 typedef signed   char   stbtt_int8;
@@ -29,8 +29,8 @@ typedef char stbtt__check_size16[sizeof(stbtt_int16)==2 ? 1 : -1];
 
 #define STBTT_fabs(x)      fabs(x)
 
-#define STBTT_malloc(x,u)  ((void)(u),kmalloc(x))
-#define STBTT_free(x,u)    ((void)(u),kfree(x))
+#define STBTT_malloc(x,u)  ((void)(u),gfx_alloc(x))
+#define STBTT_free(x,u)    ((void)(u),gfx_free(x))
 
 #define STBTT_assert(x)    assert(x)
 

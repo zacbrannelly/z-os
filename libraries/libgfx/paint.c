@@ -1,6 +1,6 @@
 #include "paint.h"
 
-#include "../assert.h"
+#include <libz/assert.h>
 #include <stddef.h>
 
 void paint_clear(bitmap_t *bitmap, uint32_t color) {

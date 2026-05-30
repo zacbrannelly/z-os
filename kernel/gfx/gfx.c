@@ -1,16 +1,20 @@
 #include "gfx.h"
 
 #include <stddef.h>
+#include <libz/handle.h>
 
+#include <libgfx/colors.h>
+#include <libgfx/bitmap.h>
+#include <libgfx/paint.h>
+#include <libgfx/font.h>
+
+#include "../assert.h"
 #include "../kernel.h"
 #include "../memory.h"
 #include "../console.h"
 #include "../kmalloc.h"
 #include "../mmap.h"
-#include "colors.h"
-#include "bitmap.h"
-#include "paint.h"
-#include "font.h"
+#include "../process/shared_memory.h"
 
 #define GFX_VIRTUAL_BASE_ADDRESS 0xFFFF400000000000ULL
 #define GFX_PAGE_FLAGS PAGE_FLAG_EL1_RW | PAGE_FLAG_NX | PAGE_FLAG_NORMAL_MEMORY_NC | PAGE_FLAG_INNER_SHARABLE | PAGE_FLAG_ACCESS
@@ -53,6 +57,20 @@ int gfx_init(boot_info_t *boot_info) {
         return -1;
     }
 
+    // Map the physical framebuffere to /dev/fb0 (for userland access).
+    shared_memory_t *shared_memory = NULL;
+    handle_t global_handle = 0;
+    assert(shared_memory_create_from_contiguous_pages(
+        "/dev/fb0",
+        (uint64_t)boot_info->framebuffer,
+        boot_info->framebuffer_size * sizeof(uint32_t),
+        &shared_memory,
+        &global_handle
+    ) == 0);
+    assert(shared_memory != NULL);
+    assert(global_handle >= 0);
+
+    // Create the back framebuffer.
     g_gfx.back_framebuffer = bitmap_create(
         width,
         height,
@@ -126,4 +144,12 @@ uint32_t gfx_get_framebuffer_width(void) {
 
 uint32_t gfx_get_framebuffer_height(void) {
     return g_gfx.framebuffer->height;
+}
+
+void *gfx_alloc(uint64_t size) {
+    return kmalloc(size);
+}
+
+void gfx_free(void *address) {
+    kfree(address);
 }

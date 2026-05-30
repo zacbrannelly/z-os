@@ -2,7 +2,6 @@
 #include "pcie.h"
 #include "../../memory.h"
 #include "../../console.h"
-#include "../../format.h"
 #include "../../page_alloc.h"
 #include "../../mmap.h"
 #include "../../mmio.h"

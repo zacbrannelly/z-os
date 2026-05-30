@@ -1,5 +1,4 @@
 #include "kernel.h"
-#include "format.h"
 #include "drivers/acpi/acpi.h"
 #include "drivers/pci/pcie.h"
 #include "drivers/pci/xhci.h"
@@ -10,7 +9,6 @@
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
 #include "gfx/gfx.h"
-#include "gfx/font.h"
 #include "ui/cursor.h"
 #include "ui/text_input.h"
 #include "page_alloc.h"
@@ -134,6 +132,9 @@ void kernel_main(boot_info_t *boot_info) {
     // Initialize the kernel heap.
     assert(kernel_heap_init() == 0);
 
+    // Initialize the file table.
+    assert(file_table_init() == 0);
+
     // Initialize the graphics system.
     assert(gfx_init(boot_info) == 0);
 
@@ -166,9 +167,6 @@ void kernel_main(boot_info_t *boot_info) {
 
     // Bind the USB drivers to the USB devices.
     assert(usb_parse_interfaces() == 0);
-
-    // Initialize the file table.
-    assert(file_table_init() == 0);
 
     // Initialize the scheduler.
     assert(scheduler_init() == 0);

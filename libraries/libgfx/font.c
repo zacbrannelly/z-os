@@ -1,19 +1,18 @@
+#include <libz/console.h>
+#include <libz/memory.h>
+#include <stdint.h>
+#include <stddef.h>
+
 #include "font.h"
 #include "fonts/roboto_medium.ttf.h"
 #include "fonts/roboto_mono.ttf.h"
 
-#include "gfx.h"
 #include "bitmap.h"
 #include "paint.h"
-#include "../console.h"
-#include "../kmalloc.h"
-
-#include <stdint.h>
-#include <stddef.h>
 
 #define STB_TRUETYPE_IMPLEMENTATION
-#include "../3rdparty/stb_truetype_impl.h"
-#include "../3rdparty/stb_truetype.h"
+#include "3rdparty/stb_truetype_impl.h"
+#include "3rdparty/stb_truetype.h"
 
 #define ATLAS_WIDTH 1024
 #define ATLAS_HEIGHT 1024
@@ -173,10 +172,6 @@ int font_calculate_cursor_pos(
         cursor_x += chardata->xadvance;
     }
     return 0;
-}
-
-int font_draw_text(const char *text, int32_t x, int32_t baseline, uint32_t color) {
-    return font_draw_text_bitmap(gfx_get_back_framebuffer(), text, x, baseline, color);
 }
 
 int font_draw_text_bitmap(bitmap_t *bitmap, const char *text, int32_t x, int32_t baseline, uint32_t color) {

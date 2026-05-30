@@ -1,19 +1,19 @@
 cmake_minimum_required(VERSION 3.25)
 
 file(GLOB_RECURSE C_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
-file(GLOB_RECURSE ASM_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.S")
 
-add_library(libz STATIC
+add_library(libgfx STATIC
     ${C_SOURCES}
-    ${ASM_SOURCES}
 )
 
-target_include_directories(libz PRIVATE
+target_include_directories(libgfx PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/3rdparty/openlibm/include"
+    "${CMAKE_SOURCE_DIR}/3rdparty/openlibm/src"
 )
 
-target_compile_options(libz PRIVATE
+target_compile_options(libgfx PRIVATE
     -ffreestanding
     -fno-builtin
     -fno-stack-protector
@@ -21,11 +21,13 @@ target_compile_options(libz PRIVATE
     -fno-pic
 )
 
-target_link_options(libz PRIVATE
+target_link_options(libgfx PRIVATE
     -nostdlib
     -no-pie
 )
 
-target_link_libraries(libz INTERFACE
+target_link_libraries(libgfx INTERFACE
+    libz
+    openlibm
     "${LIBGCC_FILE}"
 )

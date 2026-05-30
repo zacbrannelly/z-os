@@ -12,7 +12,7 @@
 #include "../scheduler/thread.h"
 #include "../scheduler/scheduler.h"
 
-static int shared_memory_create(
+int shared_memory_create(
     const char *path,
     uint64_t size,
     shared_memory_t **shared_memory_ptr,
@@ -46,6 +46,7 @@ static int shared_memory_create(
         assert(vector_push_back(&shared_memory->pages, &page_address) == 0);
     }
     shared_memory->size = size;
+    shared_memory->pages_owned = 1;
 
     *shared_memory_ptr = shared_memory;
 
@@ -59,6 +60,63 @@ static int shared_memory_create(
     file_descriptor.ops.close = shared_memory_close;
     assert(file_table_open(path, file_descriptor, global_handle) == 0);
 
+    return 0;
+}
+
+int shared_memory_create_from_contiguous_pages(
+    const char *path,
+    uint64_t physical_start_address,
+    uint64_t size,
+    shared_memory_t **shared_memory_ptr,
+    handle_t *global_handle
+) {
+    if (path == NULL || shared_memory_ptr == NULL || global_handle == NULL) {
+        return -1;
+    }
+
+    // Allocate shared memory object.
+    shared_memory_t *shared_memory = (shared_memory_t *)kmalloc(sizeof(shared_memory_t));
+    if (shared_memory == NULL) {
+        return -1;
+    }
+
+    if (vector_init(&shared_memory->pages, 16, sizeof(uint64_t)) < 0) {
+        kfree(shared_memory);
+        return -1;
+    }
+
+    uint64_t num_pages = size / PAGE_SIZE;
+    if (size % PAGE_SIZE != 0) {
+        num_pages++;
+    }
+
+    // Allocate physical pages.
+    uint64_t page_address = physical_start_address;
+    for (uint64_t i = 0; i < num_pages; i++) {
+        assert(vector_push_back(&shared_memory->pages, &page_address) == 0);
+        page_address += PAGE_SIZE;
+    }
+    shared_memory->size = size;
+    shared_memory->pages_owned = 0;
+
+    *shared_memory_ptr = shared_memory;
+
+    // Create system file table entry.
+    file_t file_descriptor;
+    file_descriptor.path = (char *)path;
+    file_descriptor.ref_count = 1;
+    file_descriptor.private_data = (void *)shared_memory;
+    file_descriptor.ops.read = shared_memory_read;
+    file_descriptor.ops.write = shared_memory_write;
+    file_descriptor.ops.close = shared_memory_close;
+    assert(file_table_open(path, file_descriptor, global_handle) == 0);
+
+    return 0;
+}
+
+int shared_memory_destroy(handle_t global_handle) {
+    // TODO: Implement this.
+    assert(0);
     return 0;
 }
 

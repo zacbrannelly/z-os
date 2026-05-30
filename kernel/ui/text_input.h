@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../gfx/point.h"
+#include <libgfx/point.h>
 
 typedef struct text_input_t {
     char *text;
