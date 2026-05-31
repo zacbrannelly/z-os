@@ -14,7 +14,7 @@
  * ------------ Library API for file ------------
  */
 
-int file_open(const char *path, handle_t *fd) {
+int file_open(const char *path, handle_t *fd, int flags) {
     if (path == NULL || fd == NULL) {
         return -1;
     }
@@ -32,7 +32,7 @@ int file_open(const char *path, handle_t *fd) {
         return -1;
     }
 
-    return file->ops.open(file, fd);
+    return file->ops.open(file, fd, flags);
 }
 
 int file_read(handle_t fd, void *buffer, uint64_t size) {

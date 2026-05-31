@@ -83,6 +83,7 @@ static int input_file_create(const char *path, input_device_t *input_device, han
     // TODO: Implement write and close operations.
     file_descriptor.ops.write = NULL;
     file_descriptor.ops.close = NULL;
+    file_descriptor.flags = 0;
     assert(file_table_open(path, file_descriptor, global_handle) == 0);
 
     // Register the input file with the input device.
@@ -92,8 +93,8 @@ static int input_file_create(const char *path, input_device_t *input_device, han
 }
 
 // Open an input file and store in process file table.
-int input_file_open(file_t *file, handle_t *handle) {
-    if (file == NULL || handle == NULL) {
+int input_file_open(file_t *file, handle_t *fd, int flags) {
+    if (file == NULL || fd == NULL) {
         return -1;
     }
 
@@ -114,9 +115,12 @@ int input_file_open(file_t *file, handle_t *handle) {
     file_t *input_file = NULL;
     assert(file_table_get(global_handle, &input_file) == 0);
 
+    // Set the flags for the input file.
+    input_file->flags = flags;
+
     // Register the input file in the process file table.
     fd_table_t *fd_table = &thread->process->fd_table;
-    return fd_table_open(fd_table, input_file, handle);
+    return fd_table_open(fd_table, input_file, fd);
 }
 
 // Read an event from an input file.
@@ -132,17 +136,24 @@ int input_file_read(file_t *file, void *buffer, uint64_t size) {
     input_file_t *input_file = (input_file_t *)file->private_data;
     assert(input_file != NULL);
 
-    while (ring_buffer_is_empty(&input_file->event_ring_buffer)) {
-        // Register as a waiter for an event.
-        thread_t *thread = scheduler_get_current_thread();
-        assert(thread != NULL);
-        assert(thread->process != NULL);
+    if (file->flags & O_NONBLOCK) {
+        if (ring_buffer_is_empty(&input_file->event_ring_buffer)) {
+            // TODO: Return more descriptive error code.
+            return -1;
+        }
+    } else {
+        while (ring_buffer_is_empty(&input_file->event_ring_buffer)) {
+            // Register as a waiter for an event.
+            thread_t *thread = scheduler_get_current_thread();
+            assert(thread != NULL);
+            assert(thread->process != NULL);
 
-        linked_list_node_t *node = NULL;
-        assert(linked_list_insert(&input_file->event_waiters, thread, &node) == 0);
+            linked_list_node_t *node = NULL;
+            assert(linked_list_insert(&input_file->event_waiters, thread, &node) == 0);
 
-        // Block the thread until an event is available.
-        scheduler_wait_for_event();
+            // Block the thread until an event is available.
+            scheduler_wait_for_event();
+        }
     }
 
     // Dequeue the event from the ring buffer.

@@ -49,6 +49,7 @@ static int channel_create(const char *path, channel_t **channel_ptr, handle_t *g
     file_descriptor.ops.read = channel_file_read;
     file_descriptor.ops.write = channel_file_write;
     file_descriptor.ops.close = channel_file_close;
+    file_descriptor.flags = 0;
     assert(file_table_open(path, file_descriptor, global_handle) == 0);
 
     return 0;

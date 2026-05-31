@@ -93,8 +93,8 @@ static inline uint64_t syscall_shutdown(void) {
     return syscall_call(SYSCALL_SHUTDOWN, 0, 0, 0, 0, 0, 0);
 }
 
-static inline uint64_t syscall_open(const char *path, handle_t *fd) {
-    return syscall_call(SYSCALL_OPEN, (uint64_t)path, (uint64_t)fd, 0, 0, 0, 0);
+static inline uint64_t syscall_open(const char *path, handle_t *fd, int flags) {
+    return syscall_call(SYSCALL_OPEN, (uint64_t)path, (uint64_t)fd, (uint64_t)flags, 0, 0, 0);
 }
 
 static inline uint64_t syscall_read(handle_t fd, void *buffer, uint64_t size) {

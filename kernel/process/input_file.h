@@ -31,7 +31,7 @@ int input_file_emit(input_file_t *input_file, input_device_event_t *event);
  */
 
 // Open an input file and store in process file table.
-int input_file_open(file_t *file, handle_t *handle);
+int input_file_open(file_t *file, handle_t *fd, int flags);
 
 // Read an event from an input file.
 int input_file_read(file_t *file, void *buffer, uint64_t size);

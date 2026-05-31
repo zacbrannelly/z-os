@@ -37,6 +37,7 @@ int input_device_create(const char *path, input_device_type_t type, input_device
     file_descriptor.ops.read = NULL;
     file_descriptor.ops.write = NULL;
     file_descriptor.ops.close = NULL;
+    file_descriptor.flags = 0;
     assert(file_table_open(path, file_descriptor, &input_device->handle) == 0);
 
     *input_device_ptr = input_device;
@@ -80,7 +81,7 @@ int input_device_close(input_device_t *input_device, input_file_t *input_file) {
         }
         node = node->next;
     }
-    
+
     return -1;
 }
 

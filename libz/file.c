@@ -1,8 +1,8 @@
 #include "file.h"
 #include "syscall.h"
 
-int open(const char *path, handle_t *fd) {
-    return syscall_open(path, fd);
+int open(const char *path, handle_t *fd, int flags) {
+    return syscall_open(path, fd, flags);
 }
 
 int read(handle_t fd, void *buffer, uint64_t size) {

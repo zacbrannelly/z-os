@@ -3,7 +3,11 @@
 #include "../exception_vector_table.h"
 
 uint64_t syscall_open_impl(exception_frame_t *frame) {
-    return file_open((const char *)frame->registers[0], (handle_t *)frame->registers[1]);
+    return file_open(
+        (const char *)frame->registers[0],
+        (handle_t *)frame->registers[1],
+        (int)frame->registers[2]
+    );
 }
 
 uint64_t syscall_read_impl(exception_frame_t *frame) {

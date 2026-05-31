@@ -58,6 +58,7 @@ int shared_memory_create(
     file_descriptor.ops.read = shared_memory_read;
     file_descriptor.ops.write = shared_memory_write;
     file_descriptor.ops.close = shared_memory_close;
+    file_descriptor.flags = 0;
     assert(file_table_open(path, file_descriptor, global_handle) == 0);
 
     return 0;
@@ -109,6 +110,7 @@ int shared_memory_create_from_contiguous_pages(
     file_descriptor.ops.read = shared_memory_read;
     file_descriptor.ops.write = shared_memory_write;
     file_descriptor.ops.close = shared_memory_close;
+    file_descriptor.flags = 0;
     assert(file_table_open(path, file_descriptor, global_handle) == 0);
 
     return 0;
