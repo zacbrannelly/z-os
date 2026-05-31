@@ -75,7 +75,7 @@ static int input_file_create(const char *path, input_device_t *input_device, han
     assert(linked_list_init(&input_file->event_waiters) == 0);
 
     file_t file_descriptor;
-    file_descriptor.path = (char *)path;
+    file_descriptor.path = NULL; // No path, it is not shared with other processes.
     file_descriptor.ref_count = 1;
     file_descriptor.private_data = (void *)input_file;
     file_descriptor.ops.open = NULL;
@@ -84,7 +84,7 @@ static int input_file_create(const char *path, input_device_t *input_device, han
     file_descriptor.ops.write = NULL;
     file_descriptor.ops.close = NULL;
     file_descriptor.flags = 0;
-    assert(file_table_open(path, file_descriptor, global_handle) == 0);
+    assert(file_table_open(NULL, file_descriptor, global_handle) == 0);
 
     // Register the input file with the input device.
     assert(input_device_open(input_device, input_file) == 0);
