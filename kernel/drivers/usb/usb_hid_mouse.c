@@ -4,6 +4,8 @@
 
 #include "../../console.h"
 #include "../../memory.h"
+#include "../../input/input.h"
+#include "../../input/input_device.h"
 
 static usb_hid_mouse_report_t g_latest_report;
 static usb_endpoint_t *g_endpoint;
@@ -48,11 +50,55 @@ static void usb_hid_mouse_transfer_callback(
         return;
     }
 
+    usb_hid_mouse_report_t previous_report = g_latest_report;
+
     memory_copy(&g_latest_report, data, sizeof(g_latest_report) - 1);
     g_latest_report.cycle_bit = g_request_cycle_bit;
     g_latest_report_valid = 1;
 
     g_request_cycle_bit = !g_request_cycle_bit;
+
+    // Emit the event on the input device.
+    input_device_t *mouse_device = input_get_mouse_device();
+    if (mouse_device == NULL) return;
+
+    // Emit MOUSE_MOVE_EVENT if the mouse has moved.
+    if (previous_report.x != g_latest_report.x || previous_report.y != g_latest_report.y) {
+        input_device_mouse_move_event_t mouse_move_event = {
+            .delta_x = g_latest_report.x,
+            .delta_y = g_latest_report.y,
+        };
+        input_device_event_t event = {
+            .type = INPUT_DEVICE_EVENT_TYPE_MOUSE_MOVE_EVENT,
+            .mouse_move_event = mouse_move_event,
+        };
+        input_device_emit(mouse_device, &event);
+    }
+
+    // Emit MOUSE_UP_EVENT/MOUSE_DOWN_EVENT for each button that has changed.
+    uint8_t changed_buttons = previous_report.buttons ^ g_latest_report.buttons;
+    while (changed_buttons > 0) {
+        // Get the index of the last set bit.
+        int index = __builtin_ctz(changed_buttons);
+        uint8_t button = 1 << index;
+
+        input_device_event_type_t event_type = (g_latest_report.buttons & button) 
+            ? INPUT_DEVICE_EVENT_TYPE_MOUSE_DOWN_EVENT 
+            : INPUT_DEVICE_EVENT_TYPE_MOUSE_UP_EVENT;
+
+        input_device_mouse_button_event_t mouse_button_event = {
+            .button = button,
+        };
+
+        input_device_event_t event = {
+            .type = event_type,
+            .mouse_button_event = mouse_button_event,
+        };
+        input_device_emit(mouse_device, &event);
+
+        // Clear the last set bit (so we can process the next button).
+        changed_buttons &= (changed_buttons - 1);
+    }
 }
 
 int usb_hid_mouse_probe(usb_device_t *device, usb_configuration_t *configuration, usb_interface_t *interface) {

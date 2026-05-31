@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <libz/string.h>
 #include <libgfx/font.h>
+#include <libinput/keycodes.h>
 
 #include "../gfx/gfx.h"
 #include "../kmalloc.h"
@@ -11,7 +12,6 @@
 #include "../console.h"
 
 #include "../drivers/usb/usb_hid_keyboard.h"
-#include "../drivers/usb/usb_hid_keys.h"
 
 #define TEXT_INPUT_INITIAL_CAPACITY 128
 #define TEXT_INPUT_CHAR_WIDTH 8

@@ -5,9 +5,9 @@
 #include "drivers/usb/usb_core.h"
 #include "drivers/usb/usb_hid_mouse.h"
 #include "drivers/usb/usb_hid_keyboard.h"
-#include "drivers/usb/usb_hid_keys.h"
 #include "drivers/uart/pl011.h"
 #include "drivers/uart/uart_console.h"
+#include "input/input.h"
 #include "gfx/gfx.h"
 #include "ui/cursor.h"
 #include "ui/text_input.h"
@@ -24,6 +24,7 @@
 
 #include <libz/string.h>
 #include <libz/syscall.h>
+#include <libinput/keycodes.h>
 #include <stddef.h>
 
 // TODO: Get these from the bootloader.
@@ -97,6 +98,20 @@ static void console_kernel_thread_entry(void) {
     __builtin_unreachable();
 }
 
+static void input_kernel_thread_entry(void) {
+    while (1) {
+        // Poll the USB devices for events.
+        xhci_poll_events();
+        usb_hid_mouse_poll();
+        usb_hid_keyboard_poll();
+
+        // Yield control to the scheduler.
+        syscall_yield();
+    }
+
+    __builtin_unreachable();
+}
+
 void kernel_main(boot_info_t *boot_info) {
     // Make a copy of the boot info in the kernel stack.
     memory_copy(&g_boot_info, boot_info, sizeof(boot_info_t));
@@ -138,11 +153,6 @@ void kernel_main(boot_info_t *boot_info) {
     // Initialize the graphics system.
     assert(gfx_init(boot_info) == 0);
 
-    // Initialize the cursor system.
-    uint32_t framebuffer_width = gfx_get_framebuffer_width();
-    uint32_t framebuffer_height = gfx_get_framebuffer_height();
-    assert(cursor_init(framebuffer_width, framebuffer_height) == 0);
-
     // Initialize the ACPI system.
     assert(acpi_init(boot_info->acpi_table) == 0);
 
@@ -171,18 +181,32 @@ void kernel_main(boot_info_t *boot_info) {
     // Initialize the scheduler.
     assert(scheduler_init() == 0);
 
+    // Initialize the input system.
+    assert(input_init() == 0);
+
+    // Initialize the cursor system.
+    uint32_t framebuffer_width = gfx_get_framebuffer_width();
+    uint32_t framebuffer_height = gfx_get_framebuffer_height();
+    assert(cursor_init(framebuffer_width, framebuffer_height) == 0);
+
     // Schedule the main kernel thread.
 #if RUN_TESTS == 0
-    uint64_t kernel_thread_stack = (uint64_t)kmalloc(4096);
-    thread_t kernel_thread;
-    assert(thread_init(&kernel_thread, (uint64_t)kernel_thread_entry, kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
-    assert(thread_start(&kernel_thread) == 0);
+    // uint64_t kernel_thread_stack = (uint64_t)kmalloc(4096);
+    // thread_t kernel_thread;
+    // assert(thread_init(&kernel_thread, (uint64_t)kernel_thread_entry, kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
+    // assert(thread_start(&kernel_thread) == 0);
 
-    // Schedule a console kernel thread.
-    uint64_t console_kernel_thread_stack = (uint64_t)kmalloc(4096);
-    thread_t console_kernel_thread;
-    assert(thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
-    assert(thread_start(&console_kernel_thread) == 0);
+    // // Schedule a console kernel thread.
+    // uint64_t console_kernel_thread_stack = (uint64_t)kmalloc(4096);
+    // thread_t console_kernel_thread;
+    // assert(thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
+    // assert(thread_start(&console_kernel_thread) == 0);
+
+    // Schedule an input kernel thread (polls the USB devices for events).
+    uint64_t input_kernel_thread_stack = (uint64_t)kmalloc(4096);
+    thread_t input_kernel_thread;
+    assert(thread_init(&input_kernel_thread, (uint64_t)input_kernel_thread_entry, input_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
+    assert(thread_start(&input_kernel_thread) == 0);
 #endif
 
     for (int i = 0; i < boot_info->num_boot_modules; i++) {

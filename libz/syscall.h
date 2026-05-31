@@ -15,6 +15,10 @@
 #define SYSCALL_CHANNEL_SEND  0xA
 #define SYSCALL_CHANNEL_RECV  0xB
 #define SYSCALL_SHUTDOWN      0xC
+#define SYSCALL_OPEN          0xD
+#define SYSCALL_READ          0xE
+#define SYSCALL_WRITE         0xF
+#define SYSCALL_CLOSE         0x10
 
 /**
 * Calling conventions 
@@ -87,4 +91,20 @@ static inline uint64_t syscall_channel_recv(handle_t fd, void *data, uint64_t si
 
 static inline uint64_t syscall_shutdown(void) {
     return syscall_call(SYSCALL_SHUTDOWN, 0, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_open(const char *path, handle_t *fd) {
+    return syscall_call(SYSCALL_OPEN, (uint64_t)path, (uint64_t)fd, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_read(handle_t fd, void *buffer, uint64_t size) {
+    return syscall_call(SYSCALL_READ, (uint64_t)fd, (uint64_t)buffer, size, 0, 0, 0);
+}
+
+static inline uint64_t syscall_write(handle_t fd, const void *buffer, uint64_t size) {
+    return syscall_call(SYSCALL_WRITE, (uint64_t)fd, (uint64_t)buffer, size, 0, 0, 0);
+}
+
+static inline uint64_t syscall_close(handle_t fd) {
+    return syscall_call(SYSCALL_CLOSE, (uint64_t)fd, 0, 0, 0, 0, 0);
 }

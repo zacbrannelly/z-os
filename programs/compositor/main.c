@@ -4,17 +4,30 @@
 #include <libz/mmap.h>
 #include <libz/channel.h>
 #include <libz/memory.h>
+#include <libz/syscall.h>
+#include <libinput/input.h>
 
 #include <libgfx/bitmap.h>
 #include <libgfx/paint.h>
 #include <libgfx/colors.h>
 #include <libgfx/font.h>
 
+// TODO: Expose these from the kernel instead via file info API or something.
 #define FRAMEBUFFER_WIDTH 800
 #define FRAMEBUFFER_HEIGHT 600
 #define FRAMEBUFFER_SIZE (FRAMEBUFFER_WIDTH * FRAMEBUFFER_HEIGHT * sizeof(uint32_t))
 
 int main(void) {
+    console_write("compositor: starting\r\n");
+
+    // Open the input device.
+    handle_t input_fd;
+    if (input_open("/dev/mouse0", &input_fd) < 0) {
+        console_write("compositor: input_open failed\r\n");
+        return 1;
+    }
+    console_write("compositor: input_open succeeded\r\n");
+
     // Open the shared memory object for the framebuffer.
     handle_t fd;
     if (shm_open("/dev/fb0", FRAMEBUFFER_SIZE, &fd) != 0) {
@@ -89,6 +102,38 @@ int main(void) {
     console_write("compositor: message: ");
     console_write(channel_buffer);
     console_write("\r\n");
+
+    while (1) {
+        // wait for an event from the input device.
+        input_device_event_t event;
+        if (input_read(input_fd, &event) < 0) {
+            console_write("compositor: input_read failed\r\n");
+            return 1;
+        }
+        console_write("compositor: input_read succeeded\r\n");
+
+        if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_MOVE_EVENT) {
+            console_write("compositor: mouse move event\r\n");
+            console_write("compositor: delta_x: ");
+            console_write_hex(event.mouse_move_event.delta_x);
+            console_write("\r\n");
+            console_write("compositor: delta_y: ");
+            console_write_hex(event.mouse_move_event.delta_y);
+            console_write("\r\n");
+        }
+
+        if (
+            event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_UP_EVENT ||
+            event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_DOWN_EVENT
+        ) {
+            console_write("compositor: mouse button event\r\n");
+            console_write("compositor: button: ");
+            console_write_hex(event.mouse_button_event.button);
+            console_write("\r\n");
+        }
+
+        syscall_yield();
+    }
 
     return 0;
 }
