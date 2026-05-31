@@ -12,6 +12,9 @@
 #include <libgfx/colors.h>
 #include <libgfx/font.h>
 
+#include "gfx.h"
+#include "cursor.h"
+
 // TODO: Expose these from the kernel instead via file info API or something.
 #define FRAMEBUFFER_WIDTH 800
 #define FRAMEBUFFER_HEIGHT 600
@@ -50,11 +53,11 @@ int main(void) {
     }
     console_write("compositor: framebuffer mmap succeeded\r\n");
 
-    bitmap_t *framebuffer_bitmap = bitmap_from_data((uint8_t *)framebuffer, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, BITMAP_PIXEL_FORMAT_RGB32);
-    if (framebuffer_bitmap == NULL) {
-        console_write("compositor: bitmap_from_data failed\r\n");
+    if (gfx_init(framebuffer, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT) < 0) {
+        console_write("compositor: gfx_init failed\r\n");
         return 1;
     }
+    console_write("compositor: gfx_init succeeded\r\n");
 
     // Initialize the font system.
     if (font_init() < 0) {
@@ -63,9 +66,11 @@ int main(void) {
     }
     console_write("compositor: font_init succeeded\r\n");
 
-    // Clear the framebuffer to black.
-    paint_clear(framebuffer_bitmap, RGB_COLOR(255, 0, 0));
-    font_draw_text_bitmap(framebuffer_bitmap, "Hello, World!", 100, 100, RGB_COLOR(255, 255, 255));
+    if (cursor_init(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT) < 0) {
+        console_write("compositor: cursor_init failed\r\n");
+        return 1;
+    }
+    console_write("compositor: cursor_init succeeded\r\n");
 
     // Create shared memory object for a window.
     handle_t window_fd;
@@ -109,32 +114,16 @@ int main(void) {
     console_write(channel_buffer);
     console_write("\r\n");
 
+    bitmap_t *back_framebuffer = gfx_get_back_framebuffer();
+
     while (1) {
+        paint_clear(back_framebuffer, RGB_COLOR_BLACK);
+        font_draw_text_bitmap(back_framebuffer, "Hello, World!", 100, 100, RGB_COLOR_WHITE);
+
+        cursor_update();
+        cursor_draw();
+
         input_device_event_t event;
-        if (input_read(mouse_input_fd, &event) > 0) {
-            console_write("compositor: input_read succeeded\r\n");
-
-            if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_MOVE_EVENT) {
-                console_write("compositor: mouse move event\r\n");
-                console_write("compositor: delta_x: ");
-                console_write_hex(event.mouse_move_event.delta_x);
-                console_write("\r\n");
-                console_write("compositor: delta_y: ");
-                console_write_hex(event.mouse_move_event.delta_y);
-                console_write("\r\n");
-            }
-
-            if (
-                event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_UP_EVENT ||
-                event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_DOWN_EVENT
-            ) {
-                console_write("compositor: mouse button event\r\n");
-                console_write("compositor: button: ");
-                console_write_hex(event.mouse_button_event.button);
-                console_write("\r\n");
-            }
-        }
-
         if (input_read(keyboard_input_fd, &event) > 0) {
             console_write("compositor: input_read succeeded\r\n");
 
@@ -148,7 +137,8 @@ int main(void) {
                 console_write("\r\n");
             }
         }
-
+        
+        gfx_swap_buffers();
         syscall_yield();
     }
 

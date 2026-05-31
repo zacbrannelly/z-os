@@ -2,10 +2,12 @@
 
 #include <stddef.h>
 #include <libz/math.h>
+#include <libz/console.h>
+#include <libgfx/colors.h>
+#include <libgfx/paint.h>
+#include <libinput/input.h>
 
-#include "../console.h"
-#include "../gfx/gfx.h"
-#include "../drivers/usb/usb_hid_mouse.h"
+#include "gfx.h"
 
 #define CURSOR_WIDTH 10
 #define CURSOR_HEIGHT 10
@@ -19,10 +21,11 @@ typedef struct cursor_t {
     int32_t y;
     uint32_t bounds_x;
     uint32_t bounds_y;
-    uint8_t last_report_cycle_bit;
 
     uint8_t left_click;
     uint8_t right_click;
+
+    handle_t mouse_input_fd;
 } cursor_t;
 
 static cursor_t g_cursor;
@@ -34,6 +37,12 @@ int cursor_init(uint32_t bounds_x, uint32_t bounds_y) {
     g_cursor.bounds_y = bounds_y;
     g_cursor.left_click = 0;
     g_cursor.right_click = 0;
+
+    // Open the mouse input file.
+    if (input_open_nonblock("/dev/mouse0", &g_cursor.mouse_input_fd) < 0) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -65,29 +74,31 @@ void cursor_get_bounds(uint32_t *bounds_x, uint32_t *bounds_y) {
 }
 
 void cursor_update(void) {
-    usb_hid_mouse_report_t *report = usb_hid_mouse_get_report();
-    if (report == NULL) {
-        return;
+    input_device_event_t event;
+    if (input_read(g_cursor.mouse_input_fd, &event) < 0) return;
+
+    // Handle the mouse move event.
+    if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_MOVE_EVENT) {
+        cursor_move(event.mouse_move_event.delta_x, event.mouse_move_event.delta_y);
     }
 
-    if (report->cycle_bit == g_cursor.last_report_cycle_bit) {
-        return;
+    // Handle the mouse button up event.
+    if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_UP_EVENT) {
+        if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_LEFT) {
+            g_cursor.left_click = 0;
+        } else if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_RIGHT) {
+            g_cursor.right_click = 0;
+        }
     }
 
-    cursor_move(report->x, report->y);
-
-    if (report->buttons & USB_HID_MOUSE_BUTTON_LEFT) {
-        g_cursor.left_click = 1;
-    } else {
-        g_cursor.left_click = 0;
+    // Handle the mouse button down event.
+    if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_DOWN_EVENT) {
+        if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_LEFT) {
+            g_cursor.left_click = 1;
+        } else if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_RIGHT) {
+            g_cursor.right_click = 1;
+        }
     }
-    if (report->buttons & USB_HID_MOUSE_BUTTON_RIGHT) {
-        g_cursor.right_click = 1;
-    } else {
-        g_cursor.right_click = 0;
-    }
-
-    g_cursor.last_report_cycle_bit = report->cycle_bit;
 }
 
 void cursor_draw(void) {
@@ -97,5 +108,5 @@ void cursor_draw(void) {
     } else if (g_cursor.right_click) {
         color = CURSOR_RIGHT_CLICK_COLOR;
     }
-    gfx_fill_rect(g_cursor.x, g_cursor.y, CURSOR_WIDTH, CURSOR_HEIGHT, color);
+    paint_fill_rect(gfx_get_back_framebuffer(), g_cursor.x, g_cursor.y, CURSOR_WIDTH, CURSOR_HEIGHT, color);
 }

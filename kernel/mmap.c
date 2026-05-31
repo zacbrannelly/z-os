@@ -1,11 +1,11 @@
 #include "mmap.h"
 #include "bump_allocator.h"
 #include "console.h"
-#include "math.h"
 #include "memory.h"
 #include "assert.h"
 #include "vmap.h"
 
+#include <libz/math.h>
 #include <stddef.h>
 
 #define MMAP_VIRTUAL_BASE_ADDRESS 0xFFFF500000000000ULL

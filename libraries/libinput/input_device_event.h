@@ -2,6 +2,9 @@
 
 #include <stdint.h>
 
+#define INPUT_DEVICE_MOUSE_BUTTON_LEFT  0x01
+#define INPUT_DEVICE_MOUSE_BUTTON_RIGHT 0x02
+
 typedef enum input_device_type_t {
     INPUT_DEVICE_TYPE_KEYBOARD,
     INPUT_DEVICE_TYPE_MOUSE,
