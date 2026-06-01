@@ -9,8 +9,6 @@
 #include "drivers/uart/uart_console.h"
 #include "input/input.h"
 #include "gfx/gfx.h"
-#include "ui/cursor.h"
-#include "ui/text_input.h"
 #include "page_alloc.h"
 #include "mmap.h"
 #include "kmalloc.h"
@@ -32,71 +30,6 @@ static const uint64_t pl011_base_address = 0x09000000;
 static const uint64_t pl011_base_clock = 0x16e3600; // 24 MHz
 
 static boot_info_t g_boot_info;
-
-static void kernel_thread_entry(void) {
-    text_input_t text_input;
-    if (text_input_alloc(&text_input) < 0) {
-        console_write("Failed to initialize text input\r\n");
-        return;
-    }
-
-    text_input.position.x = 100;
-    text_input.position.y = 100;
-
-    while (1) {
-        gfx_clear(RGB_COLOR_BLACK);
-
-        xhci_poll_events();
-        usb_hid_mouse_poll();
-        usb_hid_keyboard_poll();
-        cursor_update();
-
-        usb_hid_keyboard_report_t *keyboard_report = usb_hid_keyboard_get_report();
-        if (keyboard_report != NULL) {
-            for (uint8_t i = 0; i < 6; i++) {
-                if (keyboard_report->keypress[i] == KEY_A) {
-                    // Yield control.
-                    console_write("Yielding control\r\n");
-                    syscall_yield();
-                }
-            }
-        }
-
-        text_input_draw(&text_input);
-        cursor_draw();
-        gfx_swap_buffers();
-    }
-
-    __builtin_unreachable();
-}
-
-static void console_kernel_thread_entry(void) {
-    while (1) {
-        // Wait for a character to be received.
-        char c = console_getc();
-        if (c == 'q') {
-            syscall_yield();
-            continue;
-        }
-
-        // Newline or carriage return.
-        if (c == '\r' || c == '\n') {
-            console_write("\r\n");
-            continue;
-        }
-
-        // Backspace or delete.
-        if (c == '\b' || c == 0x7f) {
-            console_write("\b \b");
-            continue;
-        }
-
-        // Echo the character back to the serial port.
-        console_putc(c);
-    }
-
-    __builtin_unreachable();
-}
 
 static void input_kernel_thread_entry(void) {
     while (1) {
@@ -184,24 +117,7 @@ void kernel_main(boot_info_t *boot_info) {
     // Initialize the input system.
     assert(input_init() == 0);
 
-    // Initialize the cursor system.
-    uint32_t framebuffer_width = gfx_get_framebuffer_width();
-    uint32_t framebuffer_height = gfx_get_framebuffer_height();
-    assert(cursor_init(framebuffer_width, framebuffer_height) == 0);
-
-    // Schedule the main kernel thread.
 #if RUN_TESTS == 0
-    // uint64_t kernel_thread_stack = (uint64_t)kmalloc(4096);
-    // thread_t kernel_thread;
-    // assert(thread_init(&kernel_thread, (uint64_t)kernel_thread_entry, kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
-    // assert(thread_start(&kernel_thread) == 0);
-
-    // // Schedule a console kernel thread.
-    // uint64_t console_kernel_thread_stack = (uint64_t)kmalloc(4096);
-    // thread_t console_kernel_thread;
-    // assert(thread_init(&console_kernel_thread, (uint64_t)console_kernel_thread_entry, console_kernel_thread_stack + 4096, THREAD_TYPE_KERNEL) == 0);
-    // assert(thread_start(&console_kernel_thread) == 0);
-
     // Schedule an input kernel thread (polls the USB devices for events).
     uint64_t input_kernel_thread_stack = (uint64_t)kmalloc(4096);
     thread_t input_kernel_thread;

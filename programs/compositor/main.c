@@ -13,7 +13,8 @@
 #include <libgfx/font.h>
 
 #include "gfx.h"
-#include "cursor.h"
+#include "ui/cursor.h"
+#include "ui/text_input.h"
 
 // TODO: Expose these from the kernel instead via file info API or something.
 #define FRAMEBUFFER_WIDTH 800
@@ -72,6 +73,13 @@ int main(void) {
     }
     console_write("compositor: cursor_init succeeded\r\n");
 
+    text_input_t text_input;
+    if (text_input_alloc(&text_input) < 0) {
+        console_write("compositor: text_input_alloc failed\r\n");
+        return 1;
+    }
+    console_write("compositor: text_input_alloc succeeded\r\n");
+
     // Create shared memory object for a window.
     handle_t window_fd;
     if (shm_open("compositor/window/0", 1024, &window_fd) != 0) {
@@ -117,10 +125,16 @@ int main(void) {
     bitmap_t *back_framebuffer = gfx_get_back_framebuffer();
 
     while (1) {
-        paint_clear(back_framebuffer, RGB_COLOR_BLACK);
-        font_draw_text_bitmap(back_framebuffer, "Hello, World!", 100, 100, RGB_COLOR_WHITE);
-
+        // Update cursor.
         cursor_update();
+
+        // Clear screen.
+        paint_clear(back_framebuffer, RGB_COLOR_BLACK);
+
+        // Render text input.
+        text_input_draw(&text_input);
+
+        // Render cursor.
         cursor_draw();
 
         input_device_event_t event;

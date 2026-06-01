@@ -19,6 +19,8 @@
 #define SYSCALL_READ          0xE
 #define SYSCALL_WRITE         0xF
 #define SYSCALL_CLOSE         0x10
+#define SYSCALL_GET_TIME_NS   0x11
+#define SYSCALL_GET_TIME_MS   0x12
 
 /**
 * Calling conventions 
@@ -107,4 +109,12 @@ static inline uint64_t syscall_write(handle_t fd, const void *buffer, uint64_t s
 
 static inline uint64_t syscall_close(handle_t fd) {
     return syscall_call(SYSCALL_CLOSE, (uint64_t)fd, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_get_time_ns(void) {
+    return syscall_call(SYSCALL_GET_TIME_NS, 0, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_get_time_ms(void) {
+    return syscall_call(SYSCALL_GET_TIME_MS, 0, 0, 0, 0, 0, 0);
 }

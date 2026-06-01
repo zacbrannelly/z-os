@@ -1,6 +1,7 @@
 #pragma once
 
 #include <libgfx/point.h>
+#include <libz/handle.h>
 
 typedef struct text_input_t {
     char *text;
@@ -13,7 +14,8 @@ typedef struct text_input_t {
     uint32_t text_color;
     point_t cursor_size;
 
-    uint8_t key_down[6];
+    uint8_t shift_down;
+    handle_t keyboard_input_fd;
 } text_input_t;
 
 int text_input_alloc(text_input_t *text_input);

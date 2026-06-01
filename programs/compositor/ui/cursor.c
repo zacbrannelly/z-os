@@ -7,7 +7,7 @@
 #include <libgfx/paint.h>
 #include <libinput/input.h>
 
-#include "gfx.h"
+#include "../gfx.h"
 
 #define CURSOR_WIDTH 10
 #define CURSOR_HEIGHT 10
@@ -75,28 +75,28 @@ void cursor_get_bounds(uint32_t *bounds_x, uint32_t *bounds_y) {
 
 void cursor_update(void) {
     input_device_event_t event;
-    if (input_read(g_cursor.mouse_input_fd, &event) < 0) return;
-
-    // Handle the mouse move event.
-    if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_MOVE_EVENT) {
-        cursor_move(event.mouse_move_event.delta_x, event.mouse_move_event.delta_y);
-    }
-
-    // Handle the mouse button up event.
-    if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_UP_EVENT) {
-        if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_LEFT) {
-            g_cursor.left_click = 0;
-        } else if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_RIGHT) {
-            g_cursor.right_click = 0;
+    while (input_read(g_cursor.mouse_input_fd, &event) > 0) {
+        // Handle the mouse move event.
+        if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_MOVE_EVENT) {
+            cursor_move(event.mouse_move_event.delta_x, event.mouse_move_event.delta_y);
         }
-    }
 
-    // Handle the mouse button down event.
-    if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_DOWN_EVENT) {
-        if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_LEFT) {
-            g_cursor.left_click = 1;
-        } else if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_RIGHT) {
-            g_cursor.right_click = 1;
+        // Handle the mouse button up event.
+        if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_UP_EVENT) {
+            if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_LEFT) {
+                g_cursor.left_click = 0;
+            } else if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_RIGHT) {
+                g_cursor.right_click = 0;
+            }
+        }
+
+        // Handle the mouse button down event.
+        if (event.type == INPUT_DEVICE_EVENT_TYPE_MOUSE_DOWN_EVENT) {
+            if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_LEFT) {
+                g_cursor.left_click = 1;
+            } else if (event.mouse_button_event.button == INPUT_DEVICE_MOUSE_BUTTON_RIGHT) {
+                g_cursor.right_click = 1;
+            }
         }
     }
 }
