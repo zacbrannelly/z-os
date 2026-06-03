@@ -30,6 +30,18 @@ void paint_fill_rect(bitmap_t *bitmap, int32_t x, int32_t y, uint32_t width, uin
     }
 }
 
+void paint_draw_rect(bitmap_t *bitmap, int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t color) {
+    uint32_t pixel_size = bitmap_pixel_format_size(bitmap->pixel_format);
+
+    // Draw top and bottom edges.
+    paint_fill_rect(bitmap, x, y, width, 1, color);
+    paint_fill_rect(bitmap, x, y + height - 1, width, 1, color);
+
+    // Draw left and right edges.
+    paint_fill_rect(bitmap, x, y, 1, height, color);
+    paint_fill_rect(bitmap, x + width - 1, y, 1, height, color);
+}
+
 static uint32_t blend_colors(uint32_t src_color, uint32_t dst_color, uint32_t alpha) {
     uint32_t inv_alpha = 255 - alpha;
     uint32_t src_red = (src_color >> 16) & 0xFF;

@@ -15,6 +15,15 @@ void paint_fill_rect(
     uint32_t color
 );
 
+void paint_draw_rect(
+    bitmap_t *bitmap,
+    int32_t x,
+    int32_t y,
+    uint32_t width,
+    uint32_t height,
+    uint32_t color
+);
+
 void paint_draw_alpha_bitmap_scaled(
     bitmap_t *bitmap,
     uint8_t *src_bitmap,
