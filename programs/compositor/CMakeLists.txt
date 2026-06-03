@@ -36,6 +36,7 @@ target_link_libraries(compositor PRIVATE
     libz
     libgfx
     libinput
+    libcommon
     "${LIBGCC_FILE}"
 )
 

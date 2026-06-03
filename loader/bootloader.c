@@ -160,8 +160,8 @@ typedef struct boot_module_info_t {
 } boot_module_info_t;
 
 static const boot_module_info_t g_boot_modules_to_load[] = {
+  { "compositor", L"compositor.elf" },
   { "hello_world", L"hello_world.elf" },
-  { "compositor", L"compositor.elf" }
 };
 
 static const boot_module_info_t g_boot_modules_to_load_tests[] = {
