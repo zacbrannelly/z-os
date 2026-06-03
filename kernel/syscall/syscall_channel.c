@@ -3,7 +3,11 @@
 #include "../exception_vector_table.h"
 
 uint64_t syscall_channel_open_impl(exception_frame_t *frame) {
-    return channel_open((const char *)frame->registers[0], (handle_t *)frame->registers[1]);
+    return channel_open(
+        (const char *)frame->registers[0],
+        (handle_t *)frame->registers[1],
+        (int)frame->registers[2]
+    );
 }
 
 uint64_t syscall_channel_close_impl(exception_frame_t *frame) {

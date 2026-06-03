@@ -1,8 +1,8 @@
 #include "channel.h"
 #include "syscall.h"
 
-int channel_open(const char *path, handle_t *fd) {
-    return syscall_channel_open(path, fd);
+int channel_open(const char *path, handle_t *fd, int flags) {
+    return syscall_channel_open(path, fd, flags);
 }
 
 int channel_close(handle_t fd) {

@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <libz/handle.h>
 
-int channel_open(const char *path, handle_t *fd);
+int channel_open(const char *path, handle_t *fd, int flags);
 int channel_close(handle_t fd);
 
 int channel_send(handle_t fd, const void *data, uint64_t size);
