@@ -322,6 +322,44 @@ EFI_STATUS EFIAPI UefiMain (
     return status;
   }
 
+  // Find the video mode with the largest resolution and set it.
+  {
+    UINT32 best_mode = graphics_output_protocol->Mode->Mode;
+    UINT64 best_pixels = 0;
+    for (UINT32 mode = 0; mode < graphics_output_protocol->Mode->MaxMode; mode++) {
+      EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *mode_info = NULL;
+      UINTN mode_info_size = 0;
+      status = graphics_output_protocol->QueryMode(
+        graphics_output_protocol,
+        mode,
+        &mode_info_size,
+        &mode_info
+      );
+      if (EFI_ERROR(status)) {
+        Print(L"Failed to query graphics mode %u: %r\r\n", mode, status);
+        continue;
+      }
+
+      UINT64 pixels = (UINT64)mode_info->HorizontalResolution * (UINT64)mode_info->VerticalResolution;
+      if (pixels > best_pixels) {
+        best_pixels = pixels;
+        best_mode = mode;
+      }
+    }
+
+    status = graphics_output_protocol->SetMode(graphics_output_protocol, best_mode);
+    if (EFI_ERROR(status)) {
+      Print(L"Failed to set graphics mode %u: %r\r\n", best_mode, status);
+      return status;
+    }
+
+    Print(L"Set graphics mode %u: %ux%u\r\n",
+      best_mode,
+      graphics_output_protocol->Mode->Info->HorizontalResolution,
+      graphics_output_protocol->Mode->Info->VerticalResolution
+    );
+  }
+
   boot_info_t boot_info;
   SetMem(&boot_info, sizeof(boot_info_t), 0);
 

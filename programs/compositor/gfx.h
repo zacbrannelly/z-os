@@ -4,8 +4,8 @@
 #include <libgfx/bitmap.h>
 
 // TODO: Expose these from the kernel.
-#define FRAMEBUFFER_WIDTH 800
-#define FRAMEBUFFER_HEIGHT 600
+#define FRAMEBUFFER_WIDTH 1024
+#define FRAMEBUFFER_HEIGHT 768
 #define FRAMEBUFFER_SIZE (FRAMEBUFFER_WIDTH * FRAMEBUFFER_HEIGHT * sizeof(uint32_t))
 
 int gfx_init(void);
