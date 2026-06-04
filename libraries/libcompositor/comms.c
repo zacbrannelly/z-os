@@ -6,6 +6,7 @@
 #include <libz/handle.h>
 #include <libz/channel.h>
 #include <libz/assert.h>
+#include <libz/process.h>
 #include "compositor_abi.h"
 
 static handle_t g_comms_fd = -1;
@@ -24,14 +25,16 @@ int comms_send_request(
     }
     assert(ensure_channel_open() == 0);
 
-    console_write("comms_send_request: sending message\r\n");
-
+    message->process_handle = process_get_handle();
     if (channel_send(g_comms_fd, message, sizeof(compositor_abi_payload_t)) < 0) {
         return -1;
     }
 
-    if (channel_recv(g_comms_fd, response, sizeof(compositor_abi_payload_t)) < 0) {
-        return -1;
+    response->process_handle = -1;
+    while (response->process_handle != message->process_handle) {
+        if (channel_recv(g_comms_fd, response, sizeof(compositor_abi_payload_t)) < 0) {
+            return -1;
+        }
     }
 
     return 0;

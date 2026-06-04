@@ -3,24 +3,25 @@
 #include <stdint.h>
 #include <libz/handle.h>
 
-#define SYSCALL_CONSOLE_WRITE 0x1
-#define SYSCALL_YIELD         0x2
-#define SYSCALL_EXIT          0x3
-#define SYSCALL_MMAP          0x4
-#define SYSCALL_MUNMAP        0x5
-#define SYSCALL_SHM_OPEN      0x6
-#define SYSCALL_SHM_UNLINK    0x7
-#define SYSCALL_CHANNEL_OPEN  0x8
-#define SYSCALL_CHANNEL_CLOSE 0x9
-#define SYSCALL_CHANNEL_SEND  0xA
-#define SYSCALL_CHANNEL_RECV  0xB
-#define SYSCALL_SHUTDOWN      0xC
-#define SYSCALL_OPEN          0xD
-#define SYSCALL_READ          0xE
-#define SYSCALL_WRITE         0xF
-#define SYSCALL_CLOSE         0x10
-#define SYSCALL_GET_TIME_NS   0x11
-#define SYSCALL_GET_TIME_MS   0x12
+#define SYSCALL_CONSOLE_WRITE      0x1
+#define SYSCALL_YIELD              0x2
+#define SYSCALL_EXIT               0x3
+#define SYSCALL_MMAP               0x4
+#define SYSCALL_MUNMAP             0x5
+#define SYSCALL_SHM_OPEN           0x6
+#define SYSCALL_SHM_UNLINK         0x7
+#define SYSCALL_CHANNEL_OPEN       0x8
+#define SYSCALL_CHANNEL_CLOSE      0x9
+#define SYSCALL_CHANNEL_SEND       0xA
+#define SYSCALL_CHANNEL_RECV       0xB
+#define SYSCALL_SHUTDOWN           0xC
+#define SYSCALL_OPEN               0xD
+#define SYSCALL_READ               0xE
+#define SYSCALL_WRITE              0xF
+#define SYSCALL_CLOSE              0x10
+#define SYSCALL_GET_TIME_NS        0x11
+#define SYSCALL_GET_TIME_MS        0x12
+#define SYSCALL_PROCESS_GET_HANDLE 0x13
 
 /**
 * Calling conventions 
@@ -117,4 +118,8 @@ static inline uint64_t syscall_get_time_ns(void) {
 
 static inline uint64_t syscall_get_time_ms(void) {
     return syscall_call(SYSCALL_GET_TIME_MS, 0, 0, 0, 0, 0, 0);
+}
+
+static inline uint64_t syscall_process_get_handle(void) {
+    return syscall_call(SYSCALL_PROCESS_GET_HANDLE, 0, 0, 0, 0, 0, 0);
 }

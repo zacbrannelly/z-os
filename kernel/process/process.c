@@ -6,6 +6,8 @@
 #include "../memory.h"
 #include "../mmap.h"
 #include "../scheduler/thread.h"
+#include "../files/file.h"
+#include "../files/file_table.h"
 
 #include <stddef.h>
 
@@ -119,6 +121,13 @@ int process_init(process_t *process) {
     ) < 0) {
         return -1;
     }
+
+    // Register the process as a file in the global file table.
+    file_t process_file;
+    memory_set(&process_file, 0, sizeof(file_t));
+    process_file.ref_count = 1;
+    process_file.private_data = (void *)process;
+    assert(file_table_open(NULL, process_file, &process->handle) == 0);
 
     return 0;
 }

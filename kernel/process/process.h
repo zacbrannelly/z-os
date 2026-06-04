@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <libz/handle.h>
 
 #include "../utils/linked_list.h"
 #include "address_space.h"
@@ -26,6 +27,7 @@ typedef struct mmap_entry_t {
 } mmap_entry_t;
 
 typedef struct process_t {
+    handle_t handle;
     thread_t *main_thread;
     linked_list_t threads;
     address_space_t address_space;

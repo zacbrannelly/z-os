@@ -10,7 +10,6 @@
 #include "window.h"
 #include "../compositor.h"
 
-
 int compositor_abi_init(compositor_t *compositor) {
     if (compositor == NULL) {
         return -1;
