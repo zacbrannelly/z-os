@@ -2,6 +2,8 @@
 
 Toy Kernel and Operating System, written in C for ARM64.
 
+![Screenshot](.github/screenshot.png)
+
 ## Prerequisites
 
 * QEMU
