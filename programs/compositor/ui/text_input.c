@@ -126,7 +126,7 @@ int text_input_move_cursor(text_input_t *text_input, int32_t dx) {
     return 0;
 }
 
-static void text_input_update(text_input_t *text_input) {
+void text_input_update(text_input_t *text_input) {
     input_device_event_t event;
     while (input_read(text_input->keyboard_input_fd, &event) > 0) {
         if (event.type == INPUT_DEVICE_EVENT_TYPE_KEY_DOWN_EVENT) {
@@ -268,9 +268,6 @@ static void text_input_update(text_input_t *text_input) {
 
 int text_input_draw(text_input_t *text_input) {
     bitmap_t *back_framebuffer = gfx_get_back_framebuffer();
-
-    // Update the state of the text input.
-    text_input_update(text_input);
 
     // Draw the content of the text input.
     if (strlen(text_input->text) > 0) {

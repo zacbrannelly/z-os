@@ -27,6 +27,12 @@ typedef struct compositor_window_t {
     uint64_t height;
     handle_t handle;
 
+    uint8_t dragging;
+    int32_t drag_start_x;
+    int32_t drag_start_y;
+    int32_t drag_offset_x;
+    int32_t drag_offset_y;
+
     // Shared memory.
     handle_t buffer_handle;
     bitmap_t *buffer;
@@ -77,15 +83,33 @@ int compositor_init(void) {
     return 0;
 }
 
-static void compositor_update(void) {
-    // Poll for requests from other processes.
-    compositor_abi_poll(&g_compositor);
+static void compositor_window_update(compositor_window_t *window) {
+    int32_t cursor_x, cursor_y;
+    cursor_get_position(&cursor_x, &cursor_y);
 
-    // Update cursor.
-    cursor_update();
+    // Check if the cursor is inside the window title bar.
+    if (cursor_is_in_rect(window->x, window->y, window->width, WINDOW_TITLE_BAR_HEIGHT)) {
+        if (cursor_is_left_click() && !window->dragging) {
+            // Enable dragging.
+            window->dragging = 1;
+            window->drag_start_x = window->x;
+            window->drag_start_y = window->y;
+            window->drag_offset_x = cursor_x;
+            window->drag_offset_y = cursor_y;
+        }
+    }
+
+    // Drag the window if it is being dragged.
+    if (window->dragging && cursor_is_left_click()) {
+        window->x = window->drag_start_x + (cursor_x - window->drag_offset_x);
+        window->y = window->drag_start_y + (cursor_y - window->drag_offset_y);
+    } else if (window->dragging) {
+        // Disable dragging.
+        window->dragging = 0;
+    }
 }
 
-static void compositor_render_window(compositor_window_t *window, bitmap_t *back_framebuffer) {
+static void compositor_window_render(compositor_window_t *window, bitmap_t *back_framebuffer) {
     // Draw title bar.
     paint_fill_rect(
         back_framebuffer,
@@ -132,6 +156,23 @@ static void compositor_render_window(compositor_window_t *window, bitmap_t *back
     );
 }
 
+static void compositor_update(void) {
+    // Poll for requests from other processes.
+    compositor_abi_poll(&g_compositor);
+
+    // Update cursor.
+    cursor_update();
+
+    // Update text input.
+    text_input_update(&g_compositor.text_input);
+
+    // Update windows.
+    for (linked_list_node_t *node = g_compositor.windows.head; node != NULL; node = node->next) {
+        compositor_window_t *window = (compositor_window_t *)node->data;
+        compositor_window_update(window);
+    }
+}
+
 int compositor_run(void) {
     bitmap_t *back_framebuffer = gfx_get_back_framebuffer();
 
@@ -148,7 +189,7 @@ int compositor_run(void) {
         // Render windows.
         for (linked_list_node_t *node = g_compositor.windows.head; node != NULL; node = node->next) {
             compositor_window_t *window = (compositor_window_t *)node->data;
-            compositor_render_window(window, back_framebuffer);
+            compositor_window_render(window, back_framebuffer);
         }
 
         // Render cursor.

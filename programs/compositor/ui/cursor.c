@@ -63,6 +63,18 @@ void cursor_get_position(int32_t *x, int32_t *y) {
     *y = g_cursor.y;
 }
 
+uint8_t cursor_is_left_click(void) {
+    return g_cursor.left_click;
+}
+
+uint8_t cursor_is_right_click(void) {
+    return g_cursor.right_click;
+}
+
+uint8_t cursor_is_in_rect(int32_t x, int32_t y, int32_t width, int32_t height) {
+    return g_cursor.x >= x && g_cursor.x < x + width && g_cursor.y >= y && g_cursor.y < y + height;
+}
+
 void curor_set_bounds(uint32_t bounds_x, uint32_t bounds_y) {
     g_cursor.bounds_x = bounds_x;
     g_cursor.bounds_y = bounds_y;

@@ -25,4 +25,5 @@ int text_input_remove_char(text_input_t *text_input);
 int text_input_move_cursor(text_input_t *text_input, int32_t dx);
 int text_input_clear(text_input_t *text_input);
 int text_input_get_text(text_input_t *text_input, char *text, uint32_t length);
+void text_input_update(text_input_t *text_input);
 int text_input_draw(text_input_t *text_input);
