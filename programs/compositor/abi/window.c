@@ -33,3 +33,52 @@ int window_abi_create(
 
     return 0;
 }
+
+int window_abi_attach_buffer(
+    compositor_t *compositor,
+    compositor_abi_payload_t *message,
+    compositor_abi_payload_t *response
+) {
+    if (compositor == NULL || message == NULL || response == NULL) {
+        return -1;
+    }
+
+    int result = compositor_window_attach_buffer(
+        message->payload.attach_buffer.window_handle,
+        message->payload.attach_buffer.buffer_handle
+    );
+
+    response->type = COMPOSITOR_ABI_TYPE_ATTACH_BUFFER_RESPONSE;
+    response->process_handle = message->process_handle;
+    response->payload.attach_buffer_response.status = result == 0 
+        ? COMPOSITOR_ABI_STATUS_SUCCESS 
+        : COMPOSITOR_ABI_STATUS_ERROR;
+
+    return 0;
+}
+
+int window_abi_commit(
+    compositor_t *compositor,
+    compositor_abi_payload_t *message,
+    compositor_abi_payload_t *response
+) {
+    if (compositor == NULL || message == NULL || response == NULL) {
+        return -1;
+    }
+    
+    int result = compositor_window_commit(
+        message->payload.commit.window_handle,
+        message->payload.commit.x,
+        message->payload.commit.y,
+        message->payload.commit.width,
+        message->payload.commit.height
+    );
+
+    response->type = COMPOSITOR_ABI_TYPE_COMMIT_RESPONSE;
+    response->process_handle = message->process_handle;
+    response->payload.commit_response.status = result == 0 
+        ? COMPOSITOR_ABI_STATUS_SUCCESS 
+        : COMPOSITOR_ABI_STATUS_ERROR;
+
+    return 0;
+}

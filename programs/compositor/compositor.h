@@ -23,3 +23,16 @@ int compositor_window_create(
     uint64_t height,
     handle_t *window_handle
 );
+
+int compositor_window_attach_buffer(
+    handle_t window_handle,
+    handle_t buffer_handle
+);
+
+int compositor_window_commit(
+    handle_t window_handle,
+    uint64_t x,
+    uint64_t y,
+    uint64_t width,
+    uint64_t height
+);

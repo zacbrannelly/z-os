@@ -12,3 +12,15 @@ int window_abi_create(
     compositor_abi_payload_t *message,
     compositor_abi_payload_t *response
 );
+
+int window_abi_attach_buffer(
+    compositor_t *compositor,
+    compositor_abi_payload_t *message,
+    compositor_abi_payload_t *response
+);
+
+int window_abi_commit(
+    compositor_t *compositor,
+    compositor_abi_payload_t *message,
+    compositor_abi_payload_t *response
+);

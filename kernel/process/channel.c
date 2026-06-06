@@ -19,6 +19,13 @@ typedef struct channel_message_t {
     uint64_t size;
 } channel_message_t;
 
+typedef struct channel_message_fd_t {
+    uint8_t *data;
+    uint64_t size;
+    handle_t process_fd;
+    handle_t fd;
+} channel_message_fd_t;
+
 typedef struct channel_t {
     linked_list_t endpoints;
 } channel_t;
@@ -30,6 +37,9 @@ typedef struct channel_file_t {
     linked_list_node_t *endpoint_node;
     linked_list_t messages;
     linked_list_t recv_waiters;
+
+    linked_list_t fd_messages;
+    linked_list_t recv_fd_waiters;
 } channel_file_t;
 
 static int channel_create(const char *path, channel_t **channel_ptr, handle_t *global_handle) {
@@ -101,6 +111,8 @@ int channel_open(const char *path, handle_t *fd, int flags) {
     // Init message queue and waiters (TODO: Move to ring buffer instead of linked list).
     assert(linked_list_init(&channel_file->messages) == 0);
     assert(linked_list_init(&channel_file->recv_waiters) == 0);
+    assert(linked_list_init(&channel_file->fd_messages) == 0);
+    assert(linked_list_init(&channel_file->recv_fd_waiters) == 0);
 
     // Register the channel file as an endpoint of the channel.
     assert(linked_list_insert(&channel->endpoints, channel_file, &channel_file->endpoint_node) == 0);
@@ -167,6 +179,152 @@ int channel_recv(handle_t fd, void *data, uint64_t size) {
     assert(file_object->ops.read == channel_file_read);
 
     return file_object->ops.read(file_object, data, size);
+}
+
+int channel_send_fd(handle_t channel_fd, handle_t fd, const void *data, uint64_t size) {
+    if (channel_fd == -1 || fd == -1) {
+        return -1;
+    }
+
+    thread_t *thread = scheduler_get_current_thread();
+    assert(thread != NULL);
+    assert(thread->process != NULL);
+
+    file_t *file_object = NULL;
+    assert(fd_table_get(&thread->process->fd_table, channel_fd, &file_object) == 0);
+    assert(file_object != NULL);
+    assert(file_object->ops.read == channel_file_read);
+
+    channel_file_t *channel_file = (channel_file_t *)file_object->private_data;
+    assert(channel_file != NULL);
+    assert(channel_file->source_channel != NULL);
+
+    channel_t *channel = (channel_t *)channel_file->source_channel->private_data;
+    assert(channel != NULL);
+
+    channel_message_fd_t *message_object = (channel_message_fd_t *)kmalloc(sizeof(channel_message_fd_t));
+    assert(message_object != NULL);
+    message_object->process_fd = thread->process->handle;
+    message_object->fd = fd;
+
+    uint8_t *new_data = (uint8_t *)kmalloc(size);
+    assert(new_data != NULL);
+    memory_copy(new_data, (void *)data, size);
+    message_object->data = new_data;
+    message_object->size = size;
+
+    // Fan out the message to all endpoints (except ourselves).
+    linked_list_node_t *endpoint_node = channel->endpoints.head;
+    while (endpoint_node != NULL) {
+        // Skip ourselves.
+        if (endpoint_node == channel_file->endpoint_node) {
+            endpoint_node = endpoint_node->next;
+            continue;
+        }
+
+        channel_file_t *endpoint_file = (channel_file_t *)endpoint_node->data;
+        assert(endpoint_file != NULL);
+
+        linked_list_node_t *node = NULL;
+        linked_list_insert(&endpoint_file->fd_messages, message_object, &node);
+
+        // Wake up any threads waiting to receive from this channel.
+        linked_list_node_t *recv_waiter = endpoint_file->recv_fd_waiters.head;
+        while (recv_waiter != NULL) {
+            // Pop the thread off the wait queue.
+            thread_t *thread = (thread_t *)recv_waiter->data;
+            linked_list_remove(&endpoint_file->recv_fd_waiters, recv_waiter);
+
+            // Wake up the thread.
+            scheduler_wake_up(thread);
+
+            // Go to the next waiter.
+            recv_waiter = endpoint_file->recv_fd_waiters.head;
+        }
+
+        endpoint_node = endpoint_node->next;
+    }
+
+    return 0;
+}
+
+int channel_recv_fd(handle_t channel_fd, handle_t* fd, void *data, uint64_t size) {
+    if (channel_fd == -1 || fd == NULL) {
+        return -1;
+    }
+
+    thread_t *thread = scheduler_get_current_thread();
+    assert(thread != NULL);
+    assert(thread->process != NULL);
+
+    file_t *file_object = NULL;
+    assert(fd_table_get(&thread->process->fd_table, channel_fd, &file_object) == 0);
+    assert(file_object != NULL);
+    assert(file_object->ops.read == channel_file_read);
+
+    channel_file_t *channel_file = (channel_file_t *)file_object->private_data;
+    assert(channel_file != NULL);
+    assert(channel_file->source_channel != NULL);
+
+    channel_t *channel = (channel_t *)channel_file->source_channel->private_data;
+    assert(channel != NULL);
+
+    if (channel_file->flags & O_NONBLOCK) {
+        // Check if there is a message available.
+        if (channel_file->fd_messages.head == NULL) {
+            return -1;
+        }
+    } else {
+        // Check if there is a message available.
+        while (channel_file->fd_messages.head == NULL) {
+            // Wait for a message to be available.
+            thread_t *thread = scheduler_get_current_thread();
+            assert(thread != NULL);
+            assert(thread->state == THREAD_STATE_RUNNING);
+
+            linked_list_node_t *node = NULL;
+            if (linked_list_insert(&channel_file->recv_fd_waiters, thread, &node) < 0) {
+                return -1;
+            }
+
+            // Block the thread until a message is available.
+            scheduler_wait_for_event();
+        }
+    }
+
+    // Peek at the message.
+    linked_list_node_t *message_node = channel_file->fd_messages.head;
+    assert(message_node != NULL);
+
+    channel_message_fd_t *message_object = (channel_message_fd_t *)message_node->data;
+    assert(message_object != NULL);
+
+    // Get source process instance.
+    file_t *source_process_file = NULL;
+    assert(file_table_get(message_object->process_fd, &source_process_file) == 0);
+
+    process_t *source_process = (process_t *)source_process_file->private_data;
+    assert(source_process != NULL);
+
+    // Get file descriptor from source process.
+    file_t *source_fd_file = NULL;
+    assert(fd_table_get(&source_process->fd_table, message_object->fd, &source_fd_file) == 0);
+    assert(source_fd_file != NULL);
+
+    // Duplicate the fd in the target process.
+    assert(fd_table_open(&thread->process->fd_table, source_fd_file, fd) == 0);
+
+    // Copy the data to the user space.
+    memory_copy(data, message_object->data, message_object->size);
+
+    // Free the message (from the kernel space).
+    kfree(message_object->data);
+    kfree(message_object);
+
+    // Pop the message off the list.
+    linked_list_remove(&channel_file->fd_messages, message_node);
+
+    return message_object->size;
 }
 
 int channel_file_read(file_t *file, void *data, uint64_t size) {

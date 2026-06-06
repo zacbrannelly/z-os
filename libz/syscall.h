@@ -22,6 +22,8 @@
 #define SYSCALL_GET_TIME_NS        0x11
 #define SYSCALL_GET_TIME_MS        0x12
 #define SYSCALL_PROCESS_GET_HANDLE 0x13
+#define SYSCALL_CHANNEL_SEND_FD    0x14
+#define SYSCALL_CHANNEL_RECV_FD    0x15
 
 /**
 * Calling conventions 
@@ -90,6 +92,14 @@ static inline uint64_t syscall_channel_send(handle_t fd, const void *data, uint6
 
 static inline uint64_t syscall_channel_recv(handle_t fd, void *data, uint64_t size) {
     return syscall_call(SYSCALL_CHANNEL_RECV, (uint64_t)fd, (uint64_t)data, size, 0, 0, 0);
+}
+
+static inline uint64_t syscall_channel_send_fd(handle_t channel_fd, handle_t fd, const void *data, uint64_t size) {
+    return syscall_call(SYSCALL_CHANNEL_SEND_FD, (uint64_t)channel_fd, (uint64_t)fd, (uint64_t)data, size, 0, 0);
+}
+
+static inline uint64_t syscall_channel_recv_fd(handle_t channel_fd, handle_t *fd, void *data, uint64_t size) {
+    return syscall_call(SYSCALL_CHANNEL_RECV_FD, (uint64_t)channel_fd, (uint64_t)fd, (uint64_t)data, size, 0, 0);
 }
 
 static inline uint64_t syscall_shutdown(void) {

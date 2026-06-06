@@ -24,6 +24,22 @@ void paint_draw_rect(
     uint32_t color
 );
 
+void paint_blit_bitmap(
+    bitmap_t *dst,
+    bitmap_t *src,
+    int32_t x,
+    int32_t y
+);
+
+void paint_blit_bitmap_rect(
+    bitmap_t *dst,
+    bitmap_t *src,
+    int32_t src_x,
+    int32_t src_y,
+    uint32_t src_width,
+    uint32_t src_height
+);
+
 void paint_draw_alpha_bitmap_scaled(
     bitmap_t *bitmap,
     uint8_t *src_bitmap,

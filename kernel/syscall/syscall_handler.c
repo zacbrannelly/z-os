@@ -15,6 +15,7 @@
 #include "syscall_shutdown.h"
 #include "syscall_file_ops.h"
 #include "syscall_time.h"
+#include "syscall_process.h"
 
 void syscall_handler(exception_frame_t *frame) {
     uint64_t syscall_idx = frame->registers[8];
@@ -52,6 +53,12 @@ void syscall_handler(exception_frame_t *frame) {
         case SYSCALL_CHANNEL_RECV:
             frame->registers[0] = syscall_channel_recv_impl(frame);
             break;
+        case SYSCALL_CHANNEL_SEND_FD:
+            frame->registers[0] = syscall_channel_send_fd_impl(frame);
+            break;
+        case SYSCALL_CHANNEL_RECV_FD:
+            frame->registers[0] = syscall_channel_recv_fd_impl(frame);
+            break;
         case SYSCALL_SHUTDOWN:
             frame->registers[0] = syscall_shutdown_impl(frame);
             break;
@@ -72,6 +79,9 @@ void syscall_handler(exception_frame_t *frame) {
             break;
         case SYSCALL_GET_TIME_MS:
             frame->registers[0] = syscall_get_time_ms_impl(frame);
+            break;
+        case SYSCALL_PROCESS_GET_HANDLE:
+            frame->registers[0] = syscall_process_get_handle_impl(frame);
             break;
         default:
             console_write("Unknown syscall index: ");

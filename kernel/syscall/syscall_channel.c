@@ -21,3 +21,11 @@ uint64_t syscall_channel_send_impl(exception_frame_t *frame) {
 uint64_t syscall_channel_recv_impl(exception_frame_t *frame) {
     return channel_recv((handle_t)frame->registers[0], (void *)frame->registers[1], frame->registers[2]);
 }
+
+uint64_t syscall_channel_send_fd_impl(exception_frame_t *frame) {
+    return channel_send_fd((handle_t)frame->registers[0], (handle_t)frame->registers[1], (void *)frame->registers[2], frame->registers[3]);
+}
+
+uint64_t syscall_channel_recv_fd_impl(exception_frame_t *frame) {
+    return channel_recv_fd((handle_t)frame->registers[0], (handle_t *)frame->registers[1], (void *)frame->registers[2], frame->registers[3]);
+}

@@ -42,6 +42,42 @@ void paint_draw_rect(bitmap_t *bitmap, int32_t x, int32_t y, uint32_t width, uin
     paint_fill_rect(bitmap, x + width - 1, y, 1, height, color);
 }
 
+void paint_blit_bitmap(bitmap_t *dst, bitmap_t *src, int32_t x, int32_t y) {
+    uint32_t pixel_size = bitmap_pixel_format_size(dst->pixel_format);
+
+    for (uint32_t i = 0; i < src->height; i++) {
+        for (uint32_t j = 0; j < src->width; j++) {
+            int32_t x0 = x + j;
+            int32_t y0 = y + i;
+
+            if (x0 < 0 || y0 < 0 || x0 >= dst->width || y0 >= dst->height)
+                continue;
+
+            uint32_t *dst_pixel_ptr = (uint32_t *)&dst->data[x0 * pixel_size + y0 * dst->stride];
+            uint32_t *src_pixel_ptr = (uint32_t *)&src->data[j * pixel_size + i * src->stride];
+            *dst_pixel_ptr = *src_pixel_ptr;
+        }
+    }
+}
+
+void paint_blit_bitmap_rect(bitmap_t *dst, bitmap_t *src, int32_t src_x, int32_t src_y, uint32_t src_width, uint32_t src_height) {
+    uint32_t pixel_size = bitmap_pixel_format_size(dst->pixel_format);
+
+    for (uint32_t i = 0; i < src_height; i++) {
+        for (uint32_t j = 0; j < src_width; j++) {
+            int32_t x0 = src_x + j;
+            int32_t y0 = src_y + i;
+
+            if (x0 < 0 || y0 < 0 || x0 >= dst->width || y0 >= dst->height)
+                continue;
+
+            uint32_t *dst_pixel_ptr = (uint32_t *)&dst->data[x0 * pixel_size + y0 * dst->stride];
+            uint32_t *src_pixel_ptr = (uint32_t *)&src->data[x0 * pixel_size + y0 * src->stride];
+            *dst_pixel_ptr = *src_pixel_ptr;
+        }
+    }
+}
+
 static uint32_t blend_colors(uint32_t src_color, uint32_t dst_color, uint32_t alpha) {
     uint32_t inv_alpha = 255 - alpha;
     uint32_t src_red = (src_color >> 16) & 0xFF;

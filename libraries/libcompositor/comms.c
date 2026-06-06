@@ -39,3 +39,27 @@ int comms_send_request(
 
     return 0;
 }
+
+int comms_send_request_fd(
+    handle_t fd_to_send,
+    compositor_abi_payload_t *message,
+    compositor_abi_payload_t *response
+) {
+    if (message == NULL || response == NULL) {
+        return -1;
+    }
+    assert(ensure_channel_open() == 0);
+
+    if (channel_send_fd(g_comms_fd, fd_to_send, message, sizeof(compositor_abi_payload_t)) < 0) {
+        return -1;
+    }
+
+    response->process_handle = -1;
+    while (response->process_handle != message->process_handle) {
+        if (channel_recv(g_comms_fd, response, sizeof(compositor_abi_payload_t)) < 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}

@@ -7,6 +7,7 @@
 #include <libz/malloc.h>
 #include <libz/console.h>
 #include <libz/string.h>
+#include <libz/mmap.h>
 #include <libgfx/colors.h>
 #include <libgfx/paint.h>
 #include <libgfx/font.h>
@@ -25,7 +26,14 @@ typedef struct compositor_window_t {
     uint64_t width;
     uint64_t height;
     handle_t handle;
+
+    // Shared memory.
+    handle_t buffer_handle;
+    bitmap_t *buffer;
     linked_list_node_t *node;
+
+    // Framebuffer.
+    bitmap_t *framebuffer;
 } compositor_window_t;
 
 static compositor_t g_compositor;
@@ -69,6 +77,14 @@ int compositor_init(void) {
     return 0;
 }
 
+static void compositor_update(void) {
+    // Poll for requests from other processes.
+    compositor_abi_poll(&g_compositor);
+
+    // Update cursor.
+    cursor_update();
+}
+
 static void compositor_render_window(compositor_window_t *window, bitmap_t *back_framebuffer) {
     // Draw title bar.
     paint_fill_rect(
@@ -98,13 +114,11 @@ static void compositor_render_window(compositor_window_t *window, bitmap_t *back
     );
 
     // Draw window content.
-    paint_fill_rect(
+    paint_blit_bitmap(
         back_framebuffer,
+        window->framebuffer,
         window->x,
-        window->y + WINDOW_TITLE_BAR_HEIGHT,
-        (uint32_t)window->width,
-        (uint32_t)window->height,
-        RGB_COLOR(25, 25, 25)
+        window->y + WINDOW_TITLE_BAR_HEIGHT
     );
 
     // Draw window border.
@@ -122,11 +136,8 @@ int compositor_run(void) {
     bitmap_t *back_framebuffer = gfx_get_back_framebuffer();
 
     while (1) {
-        // Poll for requests from other processes.
-        compositor_abi_poll(&g_compositor);
-
-        // Update cursor.
-        cursor_update();
+        // Update the compositor state.
+        compositor_update();
 
         // Clear screen.
         paint_clear(back_framebuffer, RGB_COLOR_BLACK);
@@ -148,6 +159,15 @@ int compositor_run(void) {
     }
 
     return 0;
+}
+
+static compositor_window_t *compositor_window_get(handle_t window_handle) {
+    compositor_window_t *window = NULL;
+    if (handle_table_get(&g_compositor.window_table, window_handle, (void **)&window) < 0) {
+        return NULL;
+    }
+
+    return window;
 }
 
 int compositor_window_create(
@@ -172,6 +192,22 @@ int compositor_window_create(
     window->width = width;
     window->height = height;
 
+    // Create a bitmap for the framebuffer.
+    window->framebuffer = bitmap_create(width, height, BITMAP_PIXEL_FORMAT_RGB32);
+    if (window->framebuffer == NULL) {
+        return -1;
+    }
+
+    // Clear the framebuffer with a dark gray color.
+    paint_fill_rect(
+        window->framebuffer,
+        0,
+        0,
+        width,
+        height,
+        RGB_COLOR(25, 25, 25)
+    );
+
     // Register window with handle table.
     assert(handle_table_insert(&g_compositor.window_table, window, window_handle) == 0);
     window->handle = *window_handle;
@@ -179,5 +215,59 @@ int compositor_window_create(
     // Register window with windows list.
     assert(linked_list_insert(&g_compositor.windows, (void *)window, &window->node) == 0);
 
+    return 0;
+}
+
+int compositor_window_attach_buffer(
+    handle_t window_handle,
+    handle_t buffer_handle
+) {
+    if (window_handle == -1 || buffer_handle == -1) {
+        return -1;
+    }
+
+    compositor_window_t *window = compositor_window_get(window_handle);
+    if (window == NULL) {
+        return -1;
+    }
+
+    window->buffer_handle = buffer_handle;
+
+    // Map the shared memory to our address space.
+    uint64_t buffer_size = window->width * window->height * sizeof(uint32_t);
+    uint32_t *buffer = (uint32_t *)mmap(0, buffer_size, MAP_SHARED | MAP_READ | MAP_WRITE, buffer_handle);
+    assert(buffer != NULL);
+
+    // Create a bitmap from the shared memory.
+    window->buffer = bitmap_from_data((uint8_t *)buffer, window->width, window->height, BITMAP_PIXEL_FORMAT_RGB32);
+    assert(window->buffer != NULL);
+
+    return 0;
+}
+
+int compositor_window_commit(
+    handle_t window_handle,
+    uint64_t x,
+    uint64_t y,
+    uint64_t width,
+    uint64_t height
+) {
+    if (window_handle == -1) {
+        return -1;
+    }
+
+    compositor_window_t *window = compositor_window_get(window_handle);
+    if (window == NULL) {
+        return -1;
+    }
+
+    paint_blit_bitmap_rect(
+        window->framebuffer,
+        window->buffer,
+        x,
+        y,
+        width,
+        height
+    );
     return 0;
 }

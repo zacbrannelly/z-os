@@ -8,3 +8,6 @@ int channel_close(handle_t fd);
 
 int channel_send(handle_t fd, const void *data, uint64_t size);
 int channel_recv(handle_t fd, void *data, uint64_t size);
+
+int channel_send_fd(handle_t channel_fd, handle_t fd, const void *data, uint64_t size);
+int channel_recv_fd(handle_t channel_fd, handle_t* fd, void *data, uint64_t size);

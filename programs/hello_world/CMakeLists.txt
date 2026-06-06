@@ -35,6 +35,7 @@ target_link_options(hello_world PRIVATE
 target_link_libraries(hello_world PRIVATE
     libz
     libcompositor
+    libgfx
     "${LIBGCC_FILE}"
 )
 

@@ -25,11 +25,7 @@ int compositor_abi_init(compositor_t *compositor) {
     return 0;
 }
 
-int compositor_abi_poll(compositor_t *compositor) {
-    if (compositor == NULL) {
-        return -1;
-    }
-
+static int compositor_abi_process_messages(compositor_t *compositor) {
     compositor_abi_payload_t message;
     memory_set(&message, 0, sizeof(compositor_abi_payload_t));
 
@@ -46,6 +42,46 @@ int compositor_abi_poll(compositor_t *compositor) {
         case COMPOSITOR_ABI_TYPE_CREATE_WINDOW_REQUEST:
             window_abi_create(compositor, &message, &response);
             break;
+        case COMPOSITOR_ABI_TYPE_COMMIT_REQUEST:
+            window_abi_commit(compositor, &message, &response);
+            break;
+        default:
+            console_write("compositor_abi: unknown payload type\r\n");
+            return -1;
+    }
+
+    // Send response.
+    if (channel_send(compositor->channel_fd, &response, sizeof(compositor_abi_payload_t)) < 0) {
+        console_write("compositor_abi: channel_send failed\r\n");
+        return -1;
+    }
+    console_write("compositor_abi: response sent\r\n");
+    return 0;
+}
+
+static int compositor_abi_process_fd_messages(compositor_t *compositor) {
+    if (compositor == NULL) {
+        return -1;
+    }
+
+    compositor_abi_payload_t message;
+    memory_set(&message, 0, sizeof(compositor_abi_payload_t));
+
+    handle_t fd_to_receive = -1;
+    if (channel_recv_fd(compositor->channel_fd, &fd_to_receive, &message, sizeof(compositor_abi_payload_t)) < 0) {
+        // No message to process.
+        return 0;
+    }
+
+    console_write("compositor_abi: received message\r\n");
+    
+    // Process message.
+    compositor_abi_payload_t response;
+    switch (message.type) {
+        case COMPOSITOR_ABI_TYPE_ATTACH_BUFFER_REQUEST:
+            message.payload.attach_buffer.buffer_handle = fd_to_receive;
+            window_abi_attach_buffer(compositor, &message, &response);
+            break;
         default:
             console_write("compositor_abi: unknown payload type\r\n");
             return -1;
@@ -59,4 +95,14 @@ int compositor_abi_poll(compositor_t *compositor) {
     console_write("compositor_abi: response sent\r\n");
 
     return 0;
+}
+
+int compositor_abi_poll(compositor_t *compositor) {
+    if (compositor == NULL) {
+        return -1;
+    }
+    return (
+        compositor_abi_process_messages(compositor) < 0 || 
+        compositor_abi_process_fd_messages(compositor) < 0
+    );
 }
