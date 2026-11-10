@@ -159,14 +159,17 @@ typedef struct boot_module_info_t {
   CHAR16* path;
 } boot_module_info_t;
 
+#if RUN_TESTS == 1
+static const boot_module_info_t g_boot_modules_to_load[] = {
+  { "tests", L"tests.elf" }
+};
+#else
 static const boot_module_info_t g_boot_modules_to_load[] = {
   { "compositor", L"compositor.elf" },
   { "hello_world", L"hello_world.elf" },
 };
 
-static const boot_module_info_t g_boot_modules_to_load_tests[] = {
-  { "tests", L"tests.elf" }
-};
+#endif
 
 static EFI_STATUS load_boot_module(
   const boot_module_info_t *boot_module,
@@ -197,13 +200,8 @@ static EFI_STATUS load_boot_modules(
 ) {
   EFI_STATUS status = EFI_SUCCESS;
 
-#if RUN_TESTS == 1
-  int num_boot_modules = sizeof(g_boot_modules_to_load_tests) / sizeof(boot_module_info_t);
-  const boot_module_info_t *boot_modules = g_boot_modules_to_load_tests;
-#else
   int num_boot_modules = sizeof(g_boot_modules_to_load) / sizeof(boot_module_info_t);
   const boot_module_info_t *boot_modules = g_boot_modules_to_load;
-#endif
 
   for (int i = 0; i < num_boot_modules; i++) {
     const boot_module_info_t *boot_module = &boot_modules[i];
