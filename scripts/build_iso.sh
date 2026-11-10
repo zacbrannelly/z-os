@@ -5,7 +5,7 @@ dd if=/dev/zero of=efiboot.img bs=1M count=16
 mkfs.vfat efiboot.img
 mmd -i efiboot.img ::/EFI
 mmd -i efiboot.img ::/EFI/BOOT
-mcopy -i efiboot.img Build/bootloader/DEBUG_GCC5/AARCH64/bootloader.efi ::/EFI/BOOT/BOOTAA64.EFI
+mcopy -i efiboot.img Build/bootloader/DEBUG_GCC/AARCH64/bootloader.efi ::/EFI/BOOT/BOOTAA64.EFI
 
 # Create ISO image
 mkdir -p iso
