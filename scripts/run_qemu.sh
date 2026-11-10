@@ -23,6 +23,8 @@ qemu_args+=(
 
 if [ "${ZOS_RUN_TESTS:-OFF}" = "ON" ]; then
   qemu_args+=(-display none)
+elif [ "$(uname -s)" = "Darwin" ]; then
+  qemu_args+=(-display cocoa,zoom-to-fit=on)
 fi
 
 qemu-system-aarch64 "${qemu_args[@]}"
