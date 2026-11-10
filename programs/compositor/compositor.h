@@ -3,7 +3,29 @@
 #include <libz/handle.h>
 #include <libcommon/handle_table.h>
 #include <libcommon/linked_list.h>
+#include <libgfx/bitmap.h>
 #include "ui/text_input.h"
+#include "ui/window_title_bar.h"
+
+typedef struct compositor_window_t {
+    char *name;
+    int32_t x;
+    int32_t y;
+    uint64_t width;
+    uint64_t height;
+    handle_t handle;
+
+    // UI elements.
+    window_title_bar_t title_bar;
+
+    // Shared memory.
+    handle_t buffer_handle;
+    bitmap_t *buffer;
+    linked_list_node_t *node;
+
+    // Framebuffer.
+    bitmap_t *framebuffer;
+} compositor_window_t;
 
 typedef struct compositor_t {
     handle_t channel_fd;

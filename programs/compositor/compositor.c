@@ -15,32 +15,8 @@
 #include "gfx.h"
 #include "ui/cursor.h"
 #include "ui/text_input.h"
+#include "ui/window_title_bar.h"
 #include "abi/compositor_abi.h"
-
-#define WINDOW_TITLE_BAR_HEIGHT 28
-
-typedef struct compositor_window_t {
-    char *name;
-    int32_t x;
-    int32_t y;
-    uint64_t width;
-    uint64_t height;
-    handle_t handle;
-
-    uint8_t dragging;
-    int32_t drag_start_x;
-    int32_t drag_start_y;
-    int32_t drag_offset_x;
-    int32_t drag_offset_y;
-
-    // Shared memory.
-    handle_t buffer_handle;
-    bitmap_t *buffer;
-    linked_list_node_t *node;
-
-    // Framebuffer.
-    bitmap_t *framebuffer;
-} compositor_window_t;
 
 static compositor_t g_compositor;
 
@@ -84,58 +60,12 @@ int compositor_init(void) {
 }
 
 static void compositor_window_update(compositor_window_t *window) {
-    int32_t cursor_x, cursor_y;
-    cursor_get_position(&cursor_x, &cursor_y);
-
-    // Check if the cursor is inside the window title bar.
-    if (cursor_is_in_rect(window->x, window->y, window->width, WINDOW_TITLE_BAR_HEIGHT)) {
-        if (cursor_is_left_click() && !window->dragging) {
-            // Enable dragging.
-            window->dragging = 1;
-            window->drag_start_x = window->x;
-            window->drag_start_y = window->y;
-            window->drag_offset_x = cursor_x;
-            window->drag_offset_y = cursor_y;
-        }
-    }
-
-    // Drag the window if it is being dragged.
-    if (window->dragging && cursor_is_left_click()) {
-        window->x = window->drag_start_x + (cursor_x - window->drag_offset_x);
-        window->y = window->drag_start_y + (cursor_y - window->drag_offset_y);
-    } else if (window->dragging) {
-        // Disable dragging.
-        window->dragging = 0;
-    }
+    window_title_bar_update(&window->title_bar);
 }
 
 static void compositor_window_render(compositor_window_t *window, bitmap_t *back_framebuffer) {
     // Draw title bar.
-    paint_fill_rect(
-        back_framebuffer,
-        window->x,
-        window->y,
-        (uint32_t)window->width,
-        WINDOW_TITLE_BAR_HEIGHT,
-        RGB_COLOR_BLACK
-    );
-    paint_draw_rect(
-        back_framebuffer,
-        window->x,
-        window->y,
-        (uint32_t)window->width,
-        WINDOW_TITLE_BAR_HEIGHT,
-        RGB_COLOR_WHITE
-    );
-
-    // Draw window title.
-    font_draw_text_bitmap(
-        back_framebuffer,
-        window->name,
-        window->x + 8,
-        window->y + 18,
-        RGB_COLOR_WHITE
-    );
+    window_title_bar_render(&window->title_bar, back_framebuffer);
 
     // Draw window content.
     paint_blit_bitmap(
@@ -232,6 +162,7 @@ int compositor_window_create(
     memory_copy(window->name, (void *)name, strlen(name) + 1);
     window->width = width;
     window->height = height;
+    window->title_bar.window = window;
 
     // Create a bitmap for the framebuffer.
     window->framebuffer = bitmap_create(width, height, BITMAP_PIXEL_FORMAT_RGB32);
